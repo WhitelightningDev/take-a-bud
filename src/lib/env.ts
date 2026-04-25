@@ -1,0 +1,13 @@
+export type SupabaseConfig = {
+  url: string
+  anonKey: string
+}
+
+export function getSupabaseConfig(): SupabaseConfig | null {
+  const url = import.meta.env.VITE_SUPABASE_URL
+  const anonKey =
+    import.meta.env.VITE_SUPABASE_ANON_KEY ??
+    import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY
+  if (!url || !anonKey) return null
+  return { url, anonKey }
+}

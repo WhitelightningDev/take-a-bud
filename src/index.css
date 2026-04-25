@@ -1,0 +1,93 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+:root {
+  --radius: 14px;
+
+  /* shadcn/ui tokens (HSL values) */
+  --background: 0 0% 100%;
+  --foreground: 0 0% 7%;
+  --card: 0 0% 100%;
+  --card-foreground: 0 0% 7%;
+  --popover: 0 0% 100%;
+  --popover-foreground: 0 0% 7%;
+  --primary: 45 86% 62%;
+  --primary-foreground: 40 40% 12%;
+  --secondary: 210 40% 96%;
+  --secondary-foreground: 0 0% 10%;
+  --muted: 210 40% 96%;
+  --muted-foreground: 215 20% 45%;
+  --accent: 45 86% 62%;
+  --accent-foreground: 40 40% 12%;
+  --destructive: 0 84% 60%;
+  --destructive-foreground: 0 0% 98%;
+  --border: 0 0% 85%;
+  --input: 0 0% 88%;
+  --ring: 45 86% 62%;
+
+  --page-bg: #f6f6f8;
+  --surface: #ffffff;
+  --text: #4b5563;
+  --text-h: #0b0b0b;
+  --brand: #f2c94c;
+  --shadow: 0 16px 40px rgba(0, 0, 0, 0.07);
+
+  --sans: system-ui, 'Segoe UI', Roboto, sans-serif;
+  --heading: system-ui, 'Segoe UI', Roboto, sans-serif;
+  --mono: ui-monospace, Consolas, monospace;
+
+  font: 14px/145% var(--sans);
+  letter-spacing: 0.12px;
+  color-scheme: light;
+  color: var(--text);
+  background: var(--page-bg);
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+
+  @media (max-width: 1024px) {
+    font-size: 14px;
+  }
+}
+
+#root {
+  width: 100%;
+  margin: 0;
+  text-align: center;
+  min-height: 100svh;
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  background: transparent;
+}
+
+body {
+  margin: 0;
+  background: var(--page-bg);
+}
+
+a {
+  color: inherit;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* App is full-width; individual pages manage their own max-width surfaces. */
+}
