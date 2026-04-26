@@ -2,6 +2,8 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { isSupabaseConfigured, supabase } from '../lib/supabaseClient.ts'
 import { AuthContext, type Profile, type AuthContextValue } from './authContext.ts'
 import type { User } from '@supabase/supabase-js'
+import { toast } from '../hooks/use-toast.ts'
+import { toAppError } from '../lib/appError.ts'
 
 function isMissingRelationError(message?: string): boolean {
   if (!message) return false
@@ -57,6 +59,15 @@ function metaBoolean(meta: Record<string, unknown>, key: string): boolean | null
   return null
 }
 
+function notifyAuthError(err: unknown) {
+  const appErr = toAppError(err)
+  toast({
+    variant: 'destructive',
+    title: appErr.title,
+    description: appErr.fix ? `${appErr.message} ${appErr.fix}` : appErr.message,
+  })
+}
+
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true)
   const [session, setSession] = useState<AuthContextValue['session']>(null)
@@ -93,7 +104,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     const { error } = await supabase.from('profiles').upsert(payload, { onConflict: 'id' })
     if (error && !isMissingRelationError(error.message)) {
-      console.error(error)
+      notifyAuthError(error)
     }
   }, [])
 
@@ -117,7 +128,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     if (error) {
       if (!isMissingRelationError(error.message)) {
-        console.error(error)
+        notifyAuthError(error)
       }
       setProfile(null)
       return
@@ -138,7 +149,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       try {
         const { data, error } = await supabase.auth.getSession()
         if (cancelled) return
-        if (error) console.error(error)
+        if (error) notifyAuthError(error)
         const nextSession = data.session ?? null
         setSession(nextSession)
         setUser(nextSession?.user ?? null)
@@ -149,7 +160,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           await fetchProfile(nextSession.user.id)
         }
       } catch (e) {
-        console.error(e)
+        notifyAuthError(e)
       } finally {
         if (!cancelled) setLoading(false)
       }
@@ -174,7 +185,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         ;(async () => {
           await ensureProfileFromUser(nextSession.user)
           await fetchProfile(nextSession.user.id)
-        })().catch((e) => console.error(e))
+        })().catch((e) => notifyAuthError(e))
       }
     })
 

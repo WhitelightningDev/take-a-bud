@@ -2347,15 +2347,15 @@
   min-width: 0;
   min-height: 0;
   overflow: auto;
-  padding: 10px 10px 14px;
+  padding: 18px;
 }
 
 .adminTopbar {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 10px;
-  margin-bottom: 10px;
+  gap: 16px;
+  margin-bottom: 18px;
 }
 
 .adminTopbar__title {
@@ -2378,9 +2378,9 @@
 }
 
 .adminButton {
-  height: 30px;
-  padding: 0 10px;
-  border-radius: 8px;
+  height: 34px;
+  padding: 0 14px;
+  border-radius: 10px;
   border: 1px solid rgba(0, 0, 0, 0.08);
   background: #fff;
   font-weight: 600;
@@ -2399,11 +2399,17 @@
   color: #1a1403;
 }
 
+.adminButton--danger {
+  border-color: rgba(185, 28, 28, 0.18);
+  background: #fee2e2;
+  color: #991b1b;
+}
+
 .adminCards {
   display: grid;
   grid-template-columns: repeat(6, 1fr);
-  gap: 8px;
-  margin-bottom: 8px;
+  gap: 12px;
+  margin-bottom: 12px;
 
   @media (max-width: 1500px) {
     grid-template-columns: repeat(3, 1fr);
@@ -2420,8 +2426,8 @@
 
 .adminCard {
   background: #fff;
-  border-radius: 10px;
-  padding: 8px 8px 6px;
+  border-radius: 14px;
+  padding: 14px;
   border: 1px solid rgba(0, 0, 0, 0.06);
   box-shadow: 0 8px 18px rgba(0, 0, 0, 0.03);
 }
@@ -2470,10 +2476,10 @@
 
 .adminPanel {
   background: #fff;
-  border-radius: 10px;
+  border-radius: 14px;
   border: 1px solid rgba(0, 0, 0, 0.06);
   box-shadow: 0 8px 18px rgba(0, 0, 0, 0.03);
-  padding: 8px;
+  padding: 14px;
 }
 
 .adminPanel--spaced {
@@ -2482,10 +2488,10 @@
 
 .adminPanel__head {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
-  gap: 10px;
-  margin-bottom: 8px;
+  gap: 16px;
+  margin-bottom: 14px;
 }
 
 @media (max-width: 700px) {
@@ -2502,7 +2508,7 @@
 
 .adminPanel__title {
   margin: 0;
-  font-size: 14px;
+  font-size: 15px;
   font-weight: 600;
   color: var(--text-h);
 }
@@ -2515,15 +2521,16 @@
 
 .adminPanel__actions {
   display: flex;
-  gap: 8px;
+  gap: 10px;
   flex-wrap: wrap;
+  justify-content: flex-end;
 }
 
 .adminDashboardGrid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 8px;
-  margin-bottom: 8px;
+  gap: 12px;
+  margin-bottom: 12px;
 }
 
 .adminDashboardGrid--stock {
@@ -2533,7 +2540,7 @@
 .adminInsightGrid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 8px;
+  gap: 10px;
 }
 
 .adminInsight {
@@ -2541,8 +2548,8 @@
   display: grid;
   gap: 6px;
   align-content: start;
-  padding: 10px;
-  border-radius: 10px;
+  padding: 12px;
+  border-radius: 12px;
   background:
     linear-gradient(145deg, rgba(242, 201, 76, 0.12), rgba(255, 255, 255, 0.68)),
     rgba(0, 0, 0, 0.02);
@@ -2657,15 +2664,15 @@
 .adminTabs {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
-  margin: 8px 0 10px;
+  gap: 8px;
+  margin: 10px 0 12px;
 }
 
 .adminCategoryGrid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 8px;
-  margin: 8px 0 10px;
+  gap: 10px;
+  margin: 10px 0 14px;
 
   @media (max-width: 980px) {
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -2737,13 +2744,13 @@
 .adminFilters {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: 10px;
   align-items: flex-end;
-  padding: 6px;
-  border-radius: 10px;
+  padding: 10px;
+  border-radius: 12px;
   border: 1px solid rgba(0, 0, 0, 0.06);
   background: rgba(0, 0, 0, 0.02);
-  margin-bottom: 10px;
+  margin-bottom: 12px;
 }
 
 .adminFilters__field {
@@ -2771,15 +2778,16 @@
 
 .adminTable2 {
   display: grid;
-  gap: 6px;
+  gap: 8px;
+  margin-top: 10px;
 }
 
 .adminTable2__head {
   display: grid;
   grid-template-columns: 1.2fr 0.9fr 0.6fr 0.5fr 0.5fr 1fr;
-  gap: 8px;
-  padding: 6px 8px;
-  border-radius: 10px;
+  gap: 10px;
+  padding: 9px 12px;
+  border-radius: 12px;
   background: var(--admin-accent-bg);
   font-weight: 600;
   color: var(--admin-accent-ink);
@@ -2801,9 +2809,9 @@
 .adminTable2__row {
   display: grid;
   grid-template-columns: 1.2fr 0.9fr 0.6fr 0.5fr 0.5fr 1fr;
-  gap: 8px;
-  padding: 6px 8px;
-  border-radius: 10px;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 12px;
   background: #fff;
   border: 1px solid rgba(0, 0, 0, 0.06);
   align-items: center;
@@ -2833,7 +2841,7 @@
 .adminTable2__actions {
   display: flex;
   justify-content: flex-end;
-  gap: 6px;
+  gap: 8px;
   flex-wrap: wrap;
 }
 
@@ -3048,7 +3056,7 @@
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  border-radius: 10px;
+  border-radius: 14px;
   background: #fff;
   border: 1px solid rgba(0, 0, 0, 0.08);
   box-shadow: 0 24px 70px rgba(0, 0, 0, 0.18);
@@ -3058,13 +3066,17 @@
   width: min(920px, 100%);
 }
 
+.adminModal__card--compact {
+  width: min(520px, 100%);
+}
+
 .adminModal__head {
   flex: 0 0 auto;
   display: flex;
   justify-content: space-between;
   align-items: flex-start;
-  gap: 10px;
-  padding: 10px;
+  gap: 14px;
+  padding: 14px;
   border-bottom: 1px solid rgba(0, 0, 0, 0.06);
 }
 
@@ -3115,7 +3127,7 @@
 .adminModal__card > .adminFormGrid {
   min-height: 0;
   overflow: auto;
-  padding: 10px;
+  padding: 14px;
 }
 
 .adminModal__card > .adminShareCard,
@@ -3160,6 +3172,21 @@
 
 .adminModal__actionsRow .adminButton {
   min-width: 112px;
+}
+
+.adminConfirmBody {
+  padding: 14px;
+}
+
+.adminConfirmBody p {
+  margin: 0;
+  color: rgba(0, 0, 0, 0.68);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.adminConfirmActions {
+  padding: 0 14px 14px;
 }
 
 @media (max-width: 640px) {
@@ -3297,6 +3324,11 @@
     grid-template-columns: 1fr;
     grid-template-rows: auto minmax(0, 1fr);
   }
+
+  .adminMain {
+    padding: 12px;
+  }
+
   .adminSidebar {
     position: sticky;
     top: 0;

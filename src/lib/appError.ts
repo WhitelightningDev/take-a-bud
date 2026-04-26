@@ -49,7 +49,7 @@ export function toAppError(err: unknown): AppError {
     return {
       title: 'Supabase not configured',
       message,
-      fix: 'Add `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` to `.env.local`, then restart `npm run dev`.',
+      fix: 'Add `VITE_SUPABASE_URL` and either `VITE_SUPABASE_ANON_KEY` or `VITE_SUPABASE_PUBLISHABLE_KEY` to `.env.local`, then restart `npm run dev`.',
       status,
     }
   }
@@ -125,4 +125,3 @@ export function toAppError(err: unknown): AppError {
     status,
   }
 }
-

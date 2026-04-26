@@ -202,7 +202,18 @@ export function SignupPage() {
             </span>
           </label>
 
-          {error ? <p className="form__error">{error}</p> : null}
+          {error ? (
+            <p className="form__error">
+              {error}
+              {error.toLowerCase().includes('supabase') ? (
+                <>
+                  {' '}
+                  Check <code>.env.local</code> for <code>VITE_SUPABASE_URL</code> plus an anon or
+                  publishable key, then restart <code>npm run dev</code>.
+                </>
+              ) : null}
+            </p>
+          ) : null}
           {notice ? <p className="form__notice">{notice}</p> : null}
 
           <button className="primaryButton authForm__full" type="submit" disabled={submitting}>

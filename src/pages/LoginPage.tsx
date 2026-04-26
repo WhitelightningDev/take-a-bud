@@ -126,7 +126,8 @@ export function LoginPage() {
                 {error.toLowerCase().includes('supabase') ? (
                   <>
                     {' '}
-                    Check `.env.local` and restart `npm run dev`.
+                    Check <code>.env.local</code> for <code>VITE_SUPABASE_URL</code> plus an anon or
+                    publishable key, then restart <code>npm run dev</code>.
                   </>
                 ) : null}
               </p>

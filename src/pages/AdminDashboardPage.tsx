@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { type ReactNode, useCallback, useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useAuth } from '../auth/useAuth.ts'
 import { toast } from '../hooks/use-toast.ts'
@@ -13,8 +13,15 @@ import {
 } from '../lib/productCatalog.ts'
 import { isSupabaseConfigured, supabase } from '../lib/supabaseClient.ts'
 import logoImg from '../assets/take-a-bud-logo.png'
-import '../App.css'
 
+
+
+/**
+ * Refactor target:
+ * This page currently owns admin data loading, catalog helpers, filters, forms, dialogs,
+ * dashboard analytics, and all rendered sections. Keep this file as the route/container,
+ * then move feature-specific logic into src/features/admin/* modules.
+ */
 const PRODUCT_IMAGES_BUCKET = 'product-images'
 
 type Brand = {
@@ -83,6 +90,16 @@ type CreatedUserCredentials = {
   shareText: string
 }
 
+type ConfirmDialog = {
+  title: string
+  description: string
+  confirmLabel: string
+  destructive?: boolean
+  onConfirm: () => Promise<void> | void
+}
+
+type View = 'dashboard' | 'stock' | 'apparel' | 'cannabis' | 'brands' | 'users'
+
 function formatZar(cents: number) {
   return (cents / 100).toLocaleString(undefined, { style: 'currency', currency: 'ZAR' })
 }
@@ -120,61 +137,79 @@ function viewTitle(view: View) {
   }
 }
 
-function brandName(p: Product) {
-  if (Array.isArray(p.brand)) return p.brand[0]?.name ?? null
-  return p.brand?.name ?? null
+function brandName(product: Product) {
+  if (Array.isArray(product.brand)) return product.brand[0]?.name ?? null
+  return product.brand?.name ?? null
 }
 
-function brandLogo(p: Product) {
-  if (Array.isArray(p.brand)) return p.brand[0]?.logo_url ?? null
-  return p.brand?.logo_url ?? null
+function brandLogo(product: Product) {
+  if (Array.isArray(product.brand)) return product.brand[0]?.logo_url ?? null
+  return product.brand?.logo_url ?? null
 }
 
-function productMedia(p: Product) {
+function productMedia(product: Product) {
   return resolveProductMedia({
-    imageUrl: p.image_url,
-    category: p.category,
-    brandLogoUrl: brandLogo(p),
+    imageUrl: product.image_url,
+    category: product.category,
+    brandLogoUrl: brandLogo(product),
   })
+}
+
+function stockFallbackHint(nextCategory: Product['category'], nextBrand?: Brand | null) {
+  const apparelPlaceholder = apparelPlaceholderForCategory(nextCategory)
+  if (apparelPlaceholder) {
+    return `${titleCase(nextCategory)} placeholder artwork will be used until you add a real product image.`
+  }
+
+  if (nextBrand?.logo_url) {
+    return `${nextBrand.name}'s logo will be used as the fallback when no product image is supplied.`
+  }
+
+  return 'Upload a product image or choose a brand logo fallback.'
 }
 
 function downloadCsv(filename: string, rows: Array<Record<string, string | number | null>>) {
   const columns = Array.from(
     rows.reduce((set, row) => {
-      for (const k of Object.keys(row)) set.add(k)
+      for (const key of Object.keys(row)) set.add(key)
       return set
     }, new Set<string>()),
   )
-  const escape = (v: unknown) => {
-    const s = v === null || v === undefined ? '' : String(v)
-    if (/[",\n]/.test(s)) return `"${s.replace(/"/g, '""')}"`
-    return s
+
+  const escape = (value: unknown) => {
+    const stringValue = value === null || value === undefined ? '' : String(value)
+    if (/[",\n]/.test(stringValue)) return `"${stringValue.replace(/"/g, '""')}"`
+    return stringValue
   }
+
   const csv = [
     columns.map(escape).join(','),
-    ...rows.map((r) => columns.map((c) => escape(r[c])).join(',')),
+    ...rows.map((row) => columns.map((column) => escape(row[column])).join(',')),
   ].join('\n')
+
   const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' })
   const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = filename
-  document.body.appendChild(a)
-  a.click()
-  a.remove()
+  const link = document.createElement('a')
+  link.href = url
+  link.download = filename
+  document.body.appendChild(link)
+  link.click()
+  link.remove()
   URL.revokeObjectURL(url)
 }
 
 function Sparkline({ points }: { points: number[] }) {
   const w = 220
   const h = 56
-  const min = Math.min(...points)
-  const max = Math.max(...points)
-  const d = points
-    .map((v, i) => {
-      const x = (i / (points.length - 1)) * w
-      const y = max === min ? h / 2 : h - ((v - min) / (max - min)) * h
-      return `${i === 0 ? 'M' : 'L'} ${x.toFixed(1)} ${y.toFixed(1)}`
+  const safePoints = points.length > 1 ? points : [points[0] ?? 0, points[0] ?? 0]
+  const min = Math.min(...safePoints)
+  const max = Math.max(...safePoints)
+
+  const d = safePoints
+    .map((value, index) => {
+      const x = (index / (safePoints.length - 1)) * w
+      const y = max === min ? h / 2 : h - ((value - min) / (max - min)) * h
+      return `${index === 0 ? 'M' : 'L'} ${x.toFixed(1)} ${y.toFixed(1)}`
     })
     .join(' ')
 
@@ -192,20 +227,31 @@ function SidebarItem({
   onClick,
 }: {
   active?: boolean
-  icon: React.ReactNode
+  icon: ReactNode
   label: string
   onClick: () => void
 }) {
   return (
     <button
-      className={active ? 'adminNav__item adminNav__item--active' : 'adminNav__item'}
+      className={[
+        'group flex min-h-11 w-full items-center gap-3 rounded-2xl border px-3 py-2.5 text-left text-sm font-extrabold transition',
+        active
+          ? 'border-slate-900 bg-slate-950 text-white shadow-[0_14px_30px_rgba(15,23,42,0.18)]'
+          : 'border-transparent bg-transparent text-slate-600 hover:border-slate-200 hover:bg-white hover:text-slate-950 hover:shadow-sm',
+      ].join(' ')}
       type="button"
       onClick={onClick}
     >
-      <span className="adminNav__icon" aria-hidden="true">
+      <span
+        className={[
+          'flex h-5 w-5 shrink-0 items-center justify-center [&_svg]:h-5 [&_svg]:w-5 [&_svg]:fill-current',
+          active ? 'text-white' : 'text-slate-400 group-hover:text-slate-700',
+        ].join(' ')}
+        aria-hidden="true"
+      >
         {icon}
       </span>
-      <span className="adminNav__label">{label}</span>
+      <span className="truncate leading-none">{label}</span>
     </button>
   )
 }
@@ -219,10 +265,12 @@ function AdminLogoPreview({ src, fallback }: { src?: string | null; fallback: st
       .trim()
       .split(/\s+/)
       .slice(0, 2)
-      .map((w) => w[0]?.toUpperCase())
+      .map((word) => word[0]?.toUpperCase())
       .join('')
+
     return <div className="adminBrandLogo__fallback">{letters || '—'}</div>
   }
+
   return (
     <img
       className="adminBrandLogo__img"
@@ -265,8 +313,162 @@ function AdminCatalogMedia({
   )
 }
 
-type View = 'dashboard' | 'stock' | 'apparel' | 'cannabis' | 'brands' | 'users'
+function AdminSidebar({
+  view,
+  query,
+  userEmail,
+  profileName,
+  onQueryChange,
+  onViewChange,
+  onSignOut,
+}: {
+  view: View
+  query: string
+  userEmail?: string | null
+  profileName?: string | null
+  onQueryChange: (value: string) => void
+  onViewChange: (view: View) => void
+  onSignOut: () => Promise<void> | void
+}) {
+  return (
+    <aside
+      className="flex min-h-screen w-[248px] shrink-0 flex-col justify-between border-r border-slate-200/80 bg-gradient-to-b from-white to-slate-50 px-3 py-4 shadow-sm max-lg:min-h-0 max-lg:w-full max-lg:border-b max-lg:border-r-0 max-lg:px-3 max-lg:py-3"
+      aria-label="Admin navigation"
+    >
+      <div className="flex flex-col gap-4">
+        <div className="flex items-center gap-2.5 border-b border-slate-200/80 px-2 pb-3">
+          <img
+            className="h-9 w-9 rounded-xl border border-slate-200 bg-white object-contain p-0.5 shadow-sm"
+            src={logoImg}
+            alt="Take A Bud"
+          />
+          <div className="min-w-0">
+            <span className="block text-[0.62rem] font-bold uppercase tracking-[0.16em] text-slate-400">
+              Admin console
+            </span>
+            <span className="block truncate text-sm font-bold tracking-tight text-slate-950">
+              Take A Bud
+            </span>
+          </div>
+        </div>
 
+        <label className="block px-1">
+          <span className="sr-only">Search</span>
+          <input
+            className="h-9 w-full rounded-xl border border-slate-200 bg-white px-3 text-xs font-medium text-slate-900 shadow-sm outline-none transition placeholder:text-slate-400 focus:border-emerald-400 focus:ring-4 focus:ring-emerald-500/10"
+            placeholder="Search catalog, brands, users…"
+            value={query}
+            onChange={(event) => onQueryChange(event.target.value)}
+          />
+        </label>
+
+        <nav className="flex flex-col gap-1 max-lg:grid max-lg:grid-cols-2" aria-label="Admin sections">
+          <SidebarItem
+            active={view === 'dashboard'}
+            label="Dashboard"
+            onClick={() => onViewChange('dashboard')}
+            icon={
+              <svg viewBox="0 0 24 24" role="presentation" aria-hidden="true">
+                <path d="M4 13h7V4H4v9Zm0 7h7v-5H4v5Zm9 0h7V11h-7v9Zm0-18v7h7V2h-7Z" />
+              </svg>
+            }
+          />
+          <div className="mt-3 px-3 pb-1 text-[0.68rem] font-bold uppercase tracking-[0.14em] text-slate-400 max-lg:col-span-2">
+            Catalog
+          </div>
+          <SidebarItem
+            active={view === 'stock'}
+            label="All stock"
+            onClick={() => onViewChange('stock')}
+            icon={
+              <svg viewBox="0 0 24 24" role="presentation" aria-hidden="true">
+                <path d="M20 6H4v2h16V6Zm0 5H4v2h16v-2Zm0 5H4v2h16v-2Z" />
+              </svg>
+            }
+          />
+          <SidebarItem
+            active={view === 'apparel'}
+            label="Apparel"
+            onClick={() => onViewChange('apparel')}
+            icon={
+              <svg viewBox="0 0 24 24" role="presentation" aria-hidden="true">
+                <path d="M16 3h-2a2 2 0 0 1-4 0H8L4 6v5h3v10h10V11h3V6l-4-3Z" />
+              </svg>
+            }
+          />
+          <SidebarItem
+            active={view === 'cannabis'}
+            label="Cannabis"
+            onClick={() => onViewChange('cannabis')}
+            icon={
+              <svg viewBox="0 0 24 24" role="presentation" aria-hidden="true">
+                <path d="M12 2c1.2 2.7 1.3 5.2 0 7.4C10.7 7.2 10.8 4.7 12 2Zm-5 3.8c2.8 1 4.4 2.7 4.7 5.3-2.5-.6-4.1-2.4-4.7-5.3Zm10 0c-.6 2.9-2.2 4.7-4.7 5.3.3-2.6 1.9-4.3 4.7-5.3ZM4 11c3.1-.2 5.3.8 6.6 3.1-2.7.5-4.9-.5-6.6-3.1Zm16 0c-1.7 2.6-3.9 3.6-6.6 3.1C14.7 11.8 16.9 10.8 20 11Zm-8 3.7c1.2 1.1 1.8 2.5 1.8 4.3h-3.6c0-1.8.6-3.2 1.8-4.3Z" />
+              </svg>
+            }
+          />
+          <SidebarItem
+            active={view === 'brands'}
+            label="Brands"
+            onClick={() => onViewChange('brands')}
+            icon={
+              <svg viewBox="0 0 24 24" role="presentation" aria-hidden="true">
+                <path d="M12 2 2 7l10 5 10-5-10-5Zm0 8L2 5v12l10 5 10-5V5l-10 5Z" />
+              </svg>
+            }
+          />
+          <div className="mt-3 px-3 pb-1 text-[0.68rem] font-bold uppercase tracking-[0.14em] text-slate-400 max-lg:col-span-2">
+            Admin
+          </div>
+          <SidebarItem
+            active={view === 'users'}
+            label="Users"
+            onClick={() => onViewChange('users')}
+            icon={
+              <svg viewBox="0 0 24 24" role="presentation" aria-hidden="true">
+                <path d="M12 12a4 4 0 1 0-4-4 4 4 0 0 0 4 4Zm0 2c-4.4 0-8 2-8 4.5V21h16v-2.5C20 16 16.4 14 12 14Z" />
+              </svg>
+            }
+          />
+        </nav>
+      </div>
+
+      <div className="mt-4 flex flex-col gap-2.5 border-t border-slate-200/80 pt-3">
+        <div className="flex items-center gap-2.5 rounded-xl border border-slate-200 bg-white p-2.5 shadow-sm">
+          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-emerald-50 text-xs font-extrabold text-emerald-700">
+            {userEmail?.slice(0, 1).toUpperCase() ?? 'U'}
+          </div>
+          <div className="min-w-0">
+            <div className="truncate text-xs font-bold text-slate-950">{profileName ?? 'Admin'}</div>
+            <div className="truncate text-[0.72rem] font-medium text-slate-500">{userEmail ?? ''}</div>
+          </div>
+        </div>
+        <div className="grid grid-cols-1 gap-1.5">
+          <Link
+            className="inline-flex h-9 items-center justify-center rounded-xl border border-slate-200 bg-white px-3 text-xs font-bold text-slate-900 shadow-sm transition hover:bg-slate-50"
+            to="/store"
+          >
+            Open store
+          </Link>
+          <button
+            className="inline-flex h-9 items-center justify-center rounded-xl border border-red-200 bg-red-50/80 px-3 text-xs font-bold text-red-700 transition hover:bg-red-100"
+            type="button"
+            onClick={() => void onSignOut()}
+          >
+            Sign out
+          </button>
+        </div>
+      </div>
+    </aside>
+  )
+}
+
+
+/**
+ * AdminDashboardPage should become a thin route shell after the split:
+ * - auth + navigation ownership stays here
+ * - Supabase reads/writes move into admin hooks/services
+ * - dashboard, stock, brands, users, and dialogs move into dedicated components
+ */
 export function AdminDashboardPage() {
   const { user, profile, signOut } = useAuth()
   const navigate = useNavigate()
@@ -285,7 +487,7 @@ export function AdminDashboardPage() {
   const [profiles, setProfiles] = useState<ProfileRow[]>([])
   const [selectedProfile, setSelectedProfile] = useState<ProfileRow | null>(null)
 
-  // Stock item form
+  // Stock item form state. Move into src/features/admin/stock/useStockForm.ts.
   const [addStockOpen, setAddStockOpen] = useState(false)
   const [stockMode, setStockMode] = useState<StockMode>('apparel')
   const [name, setName] = useState('')
@@ -301,11 +503,15 @@ export function AdminDashboardPage() {
   const [featuredOnLanding, setFeaturedOnLanding] = useState(false)
   const [creatingStock, setCreatingStock] = useState(false)
   const [stockFormHint, setStockFormHint] = useState<string | null>(null)
+  const [stockAdjusting, setStockAdjusting] = useState<Product | null>(null)
+  const [stockAdjustQty, setStockAdjustQty] = useState('')
+  const [savingStockAdjust, setSavingStockAdjust] = useState(false)
 
-  // Brand form
+  // Brand form state. Move into src/features/admin/brands/useBrandForm.ts.
   const [newBrandName, setNewBrandName] = useState('')
   const [newBrandLogoUrl, setNewBrandLogoUrl] = useState('')
   const [newBrandLogoFile, setNewBrandLogoFile] = useState<File | null>(null)
+  const [addBrandOpen, setAddBrandOpen] = useState(false)
   const [editingBrand, setEditingBrand] = useState<Brand | null>(null)
   const [editBrandName, setEditBrandName] = useState('')
   const [editBrandLogoUrl, setEditBrandLogoUrl] = useState('')
@@ -313,17 +519,19 @@ export function AdminDashboardPage() {
   const [creatingBrand, setCreatingBrand] = useState(false)
   const [savingBrand, setSavingBrand] = useState(false)
 
-  // User form
+  // User form state. Move into src/features/admin/users/useUserForm.ts.
   const [newUserFirstName, setNewUserFirstName] = useState('')
   const [newUserLastName, setNewUserLastName] = useState('')
   const [newUserEmail, setNewUserEmail] = useState('')
+  const [newUserIdNumber, setNewUserIdNumber] = useState('')
   const [newUserPassword, setNewUserPassword] = useState('')
   const [newUserRole, setNewUserRole] = useState<NewUserRole>('user')
   const [creatingUser, setCreatingUser] = useState(false)
+  const [addUserOpen, setAddUserOpen] = useState(false)
   const [createdUserCredentials, setCreatedUserCredentials] =
     useState<CreatedUserCredentials | null>(null)
 
-  // Filters
+  // Cross-admin filters. Move into src/features/admin/hooks/useAdminFilters.ts.
   const [query, setQuery] = useState('')
   const [tab, setTab] = useState<'all' | 'apparel' | 'cannabis' | 'featured'>('all')
   const [filterOpen, setFilterOpen] = useState(false)
@@ -331,6 +539,8 @@ export function AdminDashboardPage() {
   const [brandFilter, setBrandFilter] = useState<'all' | string>('all')
   const [categoryFilter, setCategoryFilter] = useState<'all' | Product['category']>('all')
   const [analyticsNow] = useState(() => Date.now())
+  const [confirmDialog, setConfirmDialog] = useState<ConfirmDialog | null>(null)
+  const [confirmingDialog, setConfirmingDialog] = useState(false)
 
   const loadProfiles = useCallback(async () => {
     setProfilesLoading(true)
@@ -481,16 +691,35 @@ export function AdminDashboardPage() {
   }, [products])
 
   const metrics = useMemo(() => {
-    const total = products.length
-    const active = products.filter((p) => p.active).length
-    const featured = products.filter((p) => p.featured_on_landing && p.active).length
-    const outOfStock = products.filter((p) => (p.stock_qty ?? 0) <= 0 && p.active).length
-    const apparel = products.filter((p) => isApparelCategory(p.category)).length
-    const cannabis = products.filter((p) => isCannabisCategory(p.category)).length
-    const activeBrands = brands.filter((b) => b.active).length
-    const totalUsers = profiles.length
-    const admins = profiles.filter((p) => p.is_admin).length
-    return { total, active, featured, outOfStock, apparel, cannabis, activeBrands, totalUsers, admins }
+    const summary = {
+      total: products.length,
+      active: 0,
+      featured: 0,
+      outOfStock: 0,
+      apparel: 0,
+      cannabis: 0,
+      activeBrands: 0,
+      totalUsers: profiles.length,
+      admins: 0,
+    }
+
+    for (const product of products) {
+      if (product.active) summary.active += 1
+      if (product.featured_on_landing && product.active) summary.featured += 1
+      if ((product.stock_qty ?? 0) <= 0 && product.active) summary.outOfStock += 1
+      if (isApparelCategory(product.category)) summary.apparel += 1
+      if (isCannabisCategory(product.category)) summary.cannabis += 1
+    }
+
+    for (const brand of brands) {
+      if (brand.active) summary.activeBrands += 1
+    }
+
+    for (const profileRow of profiles) {
+      if (profileRow.is_admin) summary.admins += 1
+    }
+
+    return summary
   }, [products, brands, profiles])
 
   const stockScope = view === 'apparel' || view === 'cannabis' ? view : tab
@@ -601,18 +830,6 @@ export function AdminDashboardPage() {
     })
   }, [profiles, query])
 
-  function stockFallbackHint(nextCategory: Product['category'], nextBrand?: Brand | null) {
-    const apparelPlaceholder = apparelPlaceholderForCategory(nextCategory)
-    if (apparelPlaceholder) {
-      return `${titleCase(nextCategory)} placeholder artwork will be used until you add a real product image.`
-    }
-
-    if (nextBrand?.logo_url) {
-      return `${nextBrand.name}'s logo will be used as the fallback when no product image is supplied.`
-    }
-
-    return 'Upload a product image or choose a brand logo fallback.'
-  }
 
   function resetStockForm(nextMode: StockMode = stockMode) {
     setStockMode(nextMode)
@@ -660,6 +877,63 @@ export function AdminDashboardPage() {
     setAdminView(nextMode)
     setTab(nextMode)
     setAddStockOpen(true)
+  }
+
+  function openStockAdjust(product: Product) {
+    setStockAdjusting(product)
+    setStockAdjustQty(String(product.stock_qty ?? 0))
+  }
+
+  function openConfirmDialog(nextDialog: ConfirmDialog) {
+    setConfirmDialog(nextDialog)
+  }
+
+  async function handleConfirmDialog() {
+    if (!confirmDialog) return
+    setConfirmingDialog(true)
+    try {
+      await confirmDialog.onConfirm()
+      setConfirmDialog(null)
+    } finally {
+      setConfirmingDialog(false)
+    }
+  }
+
+  async function handleSaveStockAdjust() {
+    if (!stockAdjusting) return
+    const nextQty = Math.trunc(Number(stockAdjustQty))
+    if (!Number.isFinite(nextQty) || nextQty < 0) {
+      toast({
+        variant: 'destructive',
+        title: 'Invalid stock quantity',
+        description: 'Enter a whole number of 0 or higher.',
+      })
+      return
+    }
+
+    setSavingStockAdjust(true)
+    try {
+      const { error } = await supabase
+        .from('products')
+        .update({ stock_qty: nextQty })
+        .eq('id', stockAdjusting.id)
+      if (error) throw error
+      await loadProducts()
+      toast({
+        title: 'Stock updated',
+        description: `${stockAdjusting.name} now has ${nextQty} units in stock.`,
+      })
+      setStockAdjusting(null)
+    } catch (err) {
+      const appErr = toAppError(err)
+      toast({
+        variant: 'destructive',
+        title: appErr.title,
+        description: appErr.message,
+      })
+    } finally {
+      setSavingStockAdjust(false)
+    }
   }
 
   function handleCategoryChange(nextCategory: Product['category']) {
@@ -840,6 +1114,7 @@ export function AdminDashboardPage() {
         body: {
           email: newUserEmail.trim(),
           password: newUserPassword,
+          idNumber: newUserIdNumber.trim() || null,
           firstName: newUserFirstName.trim(),
           lastName: newUserLastName.trim(),
           role: newUserRole,
@@ -866,8 +1141,10 @@ export function AdminDashboardPage() {
       setNewUserFirstName('')
       setNewUserLastName('')
       setNewUserEmail('')
+      setNewUserIdNumber('')
       setNewUserPassword('')
       setNewUserRole('user')
+      setAddUserOpen(false)
       await loadProfiles()
       toast({
         title: 'User created',
@@ -906,6 +1183,7 @@ export function AdminDashboardPage() {
       setNewBrandName('')
       setNewBrandLogoUrl('')
       setNewBrandLogoFile(null)
+      setAddBrandOpen(false)
       await loadBrands()
       toast({ title: 'Brand created', description: 'It is now selectable for stock items.' })
     } catch (err) {
@@ -986,125 +1264,29 @@ export function AdminDashboardPage() {
   const canShowAdminUi = Boolean(user && profile?.is_admin)
 
   return (
-    <div className="adminShell">
-      <aside className="adminSidebar" aria-label="Admin navigation">
-        <div className="adminSidebar__top">
-          <div className="adminSidebar__brand">
-            <img className="adminSidebar__logo" src={logoImg} alt="Take A Bud" />
-            <span className="adminSidebar__title">Take A Bud</span>
-          </div>
+    <div className="min-h-screen bg-slate-50 text-slate-950 lg:flex">
+      <AdminSidebar
+        view={view}
+        query={query}
+        userEmail={user?.email ?? null}
+        profileName={profile?.full_name ?? 'Admin'}
+        onQueryChange={setQuery}
+        onViewChange={setAdminView}
+        onSignOut={async () => {
+          await signOut()
+          navigate('/', { replace: true })
+        }}
+      />
 
-          <label className="adminSidebar__search">
-            <span className="sr-only">Search</span>
-            <input
-              className="adminSidebar__searchInput"
-              placeholder="Search…"
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-            />
-          </label>
-
-          <nav className="adminNav">
-            <SidebarItem
-              active={view === 'dashboard'}
-              label="Dashboard"
-              onClick={() => setAdminView('dashboard')}
-              icon={
-                <svg viewBox="0 0 24 24" role="presentation" aria-hidden="true">
-                  <path d="M4 13h7V4H4v9Zm0 7h7v-5H4v5Zm9 0h7V11h-7v9Zm0-18v7h7V2h-7Z" />
-                </svg>
-              }
-            />
-            <div className="adminNav__section">Catalog</div>
-            <SidebarItem
-              active={view === 'stock'}
-              label="All stock"
-              onClick={() => setAdminView('stock')}
-              icon={
-                <svg viewBox="0 0 24 24" role="presentation" aria-hidden="true">
-                  <path d="M20 6H4v2h16V6Zm0 5H4v2h16v-2Zm0 5H4v2h16v-2Z" />
-                </svg>
-              }
-            />
-            <SidebarItem
-              active={view === 'apparel'}
-              label="Apparel"
-              onClick={() => setAdminView('apparel')}
-              icon={
-                <svg viewBox="0 0 24 24" role="presentation" aria-hidden="true">
-                  <path d="M16 3h-2a2 2 0 0 1-4 0H8L4 6v5h3v10h10V11h3V6l-4-3Z" />
-                </svg>
-              }
-            />
-            <SidebarItem
-              active={view === 'cannabis'}
-              label="Cannabis"
-              onClick={() => setAdminView('cannabis')}
-              icon={
-                <svg viewBox="0 0 24 24" role="presentation" aria-hidden="true">
-                  <path d="M12 2c1.2 2.7 1.3 5.2 0 7.4C10.7 7.2 10.8 4.7 12 2Zm-5 3.8c2.8 1 4.4 2.7 4.7 5.3-2.5-.6-4.1-2.4-4.7-5.3Zm10 0c-.6 2.9-2.2 4.7-4.7 5.3.3-2.6 1.9-4.3 4.7-5.3ZM4 11c3.1-.2 5.3.8 6.6 3.1-2.7.5-4.9-.5-6.6-3.1Zm16 0c-1.7 2.6-3.9 3.6-6.6 3.1C14.7 11.8 16.9 10.8 20 11Zm-8 3.7c1.2 1.1 1.8 2.5 1.8 4.3h-3.6c0-1.8.6-3.2 1.8-4.3Z" />
-                </svg>
-              }
-            />
-            <SidebarItem
-              active={view === 'brands'}
-              label="Brands"
-              onClick={() => setAdminView('brands')}
-              icon={
-                <svg viewBox="0 0 24 24" role="presentation" aria-hidden="true">
-                  <path d="M12 2 2 7l10 5 10-5-10-5Zm0 8L2 5v12l10 5 10-5V5l-10 5Z" />
-                </svg>
-              }
-            />
-            <div className="adminNav__section">Admin</div>
-            <SidebarItem
-              active={view === 'users'}
-              label="Users"
-              onClick={() => setAdminView('users')}
-              icon={
-                <svg viewBox="0 0 24 24" role="presentation" aria-hidden="true">
-                  <path d="M12 12a4 4 0 1 0-4-4 4 4 0 0 0 4 4Zm0 2c-4.4 0-8 2-8 4.5V21h16v-2.5C20 16 16.4 14 12 14Z" />
-                </svg>
-              }
-            />
-          </nav>
-        </div>
-
-        <div className="adminSidebar__bottom">
-          <div className="adminUser">
-            <div className="adminUser__avatar" aria-hidden="true">
-              {user?.email?.slice(0, 1).toUpperCase() ?? 'U'}
-            </div>
-            <div className="adminUser__meta">
-              <div className="adminUser__name">{profile?.full_name ?? 'Admin'}</div>
-              <div className="adminUser__email">{user?.email ?? ''}</div>
-            </div>
-          </div>
-          <button
-            className="adminSidebar__signout"
-            type="button"
-            onClick={async () => {
-              await signOut()
-              navigate('/', { replace: true })
-            }}
-          >
-            Sign out
-          </button>
-          <Link className="adminSidebar__link" to="/store">
-            Open store
-          </Link>
-        </div>
-      </aside>
-
-      <main className="adminMain">
-        <header className="adminTopbar">
+      <main className="min-w-0 flex-1 space-y-4 px-3 py-4 sm:px-5 lg:px-6">
+        <header className="flex flex-col gap-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:flex-row sm:items-center sm:justify-between">
           <div>
-            <h1 className="adminTopbar__title">{viewTitle(view)}</h1>
-            <p className="adminTopbar__sub">Admin-only controls for your catalog.</p>
+            <h1 className="text-lg font-bold tracking-tight text-slate-950">{viewTitle(view)}</h1>
+            <p className="mt-1 text-xs font-medium text-slate-500">Admin-only controls for your catalog.</p>
           </div>
-          <div className="adminTopbar__actions">
+          <div className="flex flex-wrap items-center gap-1.5">
             <button
-              className="adminButton adminButton--primary"
+              className="inline-flex min-h-9 items-center justify-center rounded-xl border border-slate-950 bg-slate-950 px-3 text-xs font-bold text-white shadow-sm transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
               type="button"
               onClick={() => {
                 downloadCsv(`take-a-bud-export-${new Date().toISOString().slice(0, 10)}.csv`, exportRows)
@@ -1117,19 +1299,20 @@ export function AdminDashboardPage() {
         </header>
 
         {!isSupabaseConfigured() ? (
-          <div className="notice notice--warn">
-            <p className="notice__title">Supabase is not configured</p>
-            <p className="notice__body">
-              Add <code>VITE_SUPABASE_URL</code> and <code>VITE_SUPABASE_ANON_KEY</code> to{' '}
-              <code>.env.local</code> then restart <code>npm run dev</code>.
+          <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-amber-900 shadow-sm">
+            <p className="font-bold text-amber-950">Supabase is not configured</p>
+            <p className="mt-1 text-xs font-medium leading-5 text-amber-900">
+              Add <code>VITE_SUPABASE_URL</code> and either <code>VITE_SUPABASE_ANON_KEY</code> or{' '}
+              <code>VITE_SUPABASE_PUBLISHABLE_KEY</code> to <code>.env.local</code>, then restart{' '}
+              <code>npm run dev</code>.
             </p>
           </div>
         ) : null}
 
         {!canShowAdminUi ? (
-          <div className="notice notice--warn">
-            <p className="notice__title">Admin access required</p>
-            <p className="notice__body">
+          <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-amber-900 shadow-sm">
+            <p className="font-bold text-amber-950">Admin access required</p>
+            <p className="mt-1 text-xs font-medium leading-5 text-amber-900">
               Your account is signed in, but it does not have admin permissions.
             </p>
           </div>
@@ -1137,130 +1320,130 @@ export function AdminDashboardPage() {
 
         {view === 'dashboard' ? (
           <>
-            <section className="adminCards" aria-label="Metrics">
-              <div className="adminCard">
-                <div className="adminCard__head">
-                  <div className="adminCard__label">Total items</div>
+            <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3" aria-label="Metrics">
+              <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+                <div className="mb-2 flex items-center justify-between">
+                  <div className="text-[0.72rem] font-bold uppercase tracking-[0.16em] text-slate-400">Total items</div>
                 </div>
-                <div className="adminCard__value">{metrics.total}</div>
-                <div className="adminCard__sub">Across all categories</div>
+                <div className="text-2xl font-bold tracking-tight text-slate-950">{metrics.total}</div>
+                <div className="mt-1 text-xs font-medium text-slate-500">Across all categories</div>
                 <Sparkline points={Array.from({ length: 12 }, () => metrics.total)} />
               </div>
-              <div className="adminCard">
-                <div className="adminCard__head">
-                  <div className="adminCard__label">Active items</div>
+              <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+                <div className="mb-2 flex items-center justify-between">
+                  <div className="text-[0.72rem] font-bold uppercase tracking-[0.16em] text-slate-400">Active items</div>
                 </div>
-                <div className="adminCard__value">{metrics.active}</div>
-                <div className="adminCard__sub">Visible to customers</div>
+                <div className="text-2xl font-bold tracking-tight text-slate-950">{metrics.active}</div>
+                <div className="mt-1 text-xs font-medium text-slate-500">Visible to customers</div>
                 <Sparkline points={Array.from({ length: 12 }, () => metrics.active)} />
               </div>
-              <div className="adminCard">
-                <div className="adminCard__head">
-                  <div className="adminCard__label">Apparel</div>
+              <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+                <div className="mb-2 flex items-center justify-between">
+                  <div className="text-[0.72rem] font-bold uppercase tracking-[0.16em] text-slate-400">Apparel</div>
                 </div>
-                <div className="adminCard__value">{metrics.apparel}</div>
-                <div className="adminCard__sub">Caps, shirts, and merch</div>
+                <div className="text-2xl font-bold tracking-tight text-slate-950">{metrics.apparel}</div>
+                <div className="mt-1 text-xs font-medium text-slate-500">Caps, shirts, and merch</div>
                 <Sparkline points={Array.from({ length: 12 }, () => metrics.apparel)} />
               </div>
-              <div className="adminCard">
-                <div className="adminCard__head">
-                  <div className="adminCard__label">Cannabis</div>
+              <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+                <div className="mb-2 flex items-center justify-between">
+                  <div className="text-[0.72rem] font-bold uppercase tracking-[0.16em] text-slate-400">Cannabis</div>
                 </div>
-                <div className="adminCard__value">{metrics.cannabis}</div>
-                <div className="adminCard__sub">Flower, edibles, beverages, smokables</div>
+                <div className="text-2xl font-bold tracking-tight text-slate-950">{metrics.cannabis}</div>
+                <div className="mt-1 text-xs font-medium text-slate-500">Flower, edibles, beverages, smokables</div>
                 <Sparkline points={Array.from({ length: 12 }, () => metrics.cannabis)} />
               </div>
-              <div className="adminCard">
-                <div className="adminCard__head">
-                  <div className="adminCard__label">Featured items</div>
+              <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+                <div className="mb-2 flex items-center justify-between">
+                  <div className="text-[0.72rem] font-bold uppercase tracking-[0.16em] text-slate-400">Featured items</div>
                 </div>
-                <div className="adminCard__value">{metrics.featured}</div>
-                <div className="adminCard__sub">Shown on public landing</div>
+                <div className="text-2xl font-bold tracking-tight text-slate-950">{metrics.featured}</div>
+                <div className="mt-1 text-xs font-medium text-slate-500">Shown on public landing</div>
                 <Sparkline points={Array.from({ length: 12 }, () => metrics.featured)} />
               </div>
-              <div className="adminCard">
-                <div className="adminCard__head">
-                  <div className="adminCard__label">Out of stock</div>
+              <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+                <div className="mb-2 flex items-center justify-between">
+                  <div className="text-[0.72rem] font-bold uppercase tracking-[0.16em] text-slate-400">Out of stock</div>
                 </div>
-                <div className="adminCard__value">{metrics.outOfStock}</div>
-                <div className="adminCard__sub">Active items with 0 qty</div>
+                <div className="text-2xl font-bold tracking-tight text-slate-950">{metrics.outOfStock}</div>
+                <div className="mt-1 text-xs font-medium text-slate-500">Active items with 0 qty</div>
                 <Sparkline points={Array.from({ length: 12 }, () => metrics.outOfStock)} />
               </div>
             </section>
 
-            <section className="adminDashboardGrid" aria-label="Dashboard insights">
-              <section className="adminPanel" aria-label="Catalog split">
-                <div className="adminPanel__head">
+            <section className="grid gap-3 xl:grid-cols-2" aria-label="Dashboard insights">
+              <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm" aria-label="Catalog split">
+                <div className="mb-3 flex flex-col gap-2.5 sm:flex-row sm:items-start sm:justify-between">
                   <div>
-                    <h2 className="adminPanel__title">Catalog split</h2>
-                    <p className="adminPanel__sub">Apparel and cannabis stay separated in management.</p>
+                    <h2 className="text-base font-bold tracking-tight text-slate-950">Catalog split</h2>
+                    <p className="mt-1 max-w-2xl text-xs font-medium leading-5 text-slate-500">Apparel and cannabis stay separated in management.</p>
                   </div>
                 </div>
-                <div className="adminInsightGrid">
-                  <div className="adminInsight">
-                    <div className="adminInsight__label">Active catalog</div>
-                    <div className="adminInsight__value">{dashboardAnalytics.activeProducts.length}</div>
-                    <button className="chipButton" type="button" onClick={() => setAdminView('stock')}>
+                <div className="grid gap-2.5 sm:grid-cols-3">
+                  <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                    <div className="text-[0.72rem] font-bold uppercase tracking-[0.14em] text-slate-400">Active catalog</div>
+                    <div className="mt-2 text-2xl font-bold tracking-tight text-slate-950">{dashboardAnalytics.activeProducts.length}</div>
+                    <button className="inline-flex min-h-8 items-center justify-center rounded-lg border border-slate-200 bg-white px-2.5 text-xs font-bold text-slate-700 transition hover:bg-slate-50" type="button" onClick={() => setAdminView('stock')}>
                       Review all stock
                     </button>
                   </div>
-                  <div className="adminInsight">
-                    <div className="adminInsight__label">Apparel units</div>
-                    <div className="adminInsight__value">{dashboardAnalytics.apparelStockUnits}</div>
-                    <button className="chipButton" type="button" onClick={() => setAdminView('apparel')}>
+                  <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                    <div className="text-[0.72rem] font-bold uppercase tracking-[0.14em] text-slate-400">Apparel units</div>
+                    <div className="mt-2 text-2xl font-bold tracking-tight text-slate-950">{dashboardAnalytics.apparelStockUnits}</div>
+                    <button className="inline-flex min-h-8 items-center justify-center rounded-lg border border-slate-200 bg-white px-2.5 text-xs font-bold text-slate-700 transition hover:bg-slate-50" type="button" onClick={() => setAdminView('apparel')}>
                       Manage apparel
                     </button>
                   </div>
-                  <div className="adminInsight">
-                    <div className="adminInsight__label">Cannabis units</div>
-                    <div className="adminInsight__value">{dashboardAnalytics.cannabisStockUnits}</div>
-                    <button className="chipButton" type="button" onClick={() => setAdminView('cannabis')}>
+                  <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                    <div className="text-[0.72rem] font-bold uppercase tracking-[0.14em] text-slate-400">Cannabis units</div>
+                    <div className="mt-2 text-2xl font-bold tracking-tight text-slate-950">{dashboardAnalytics.cannabisStockUnits}</div>
+                    <button className="inline-flex min-h-8 items-center justify-center rounded-lg border border-slate-200 bg-white px-2.5 text-xs font-bold text-slate-700 transition hover:bg-slate-50" type="button" onClick={() => setAdminView('cannabis')}>
                       Manage cannabis
                     </button>
                   </div>
                 </div>
               </section>
 
-              <section className="adminPanel" aria-label="Customer signups">
-                <div className="adminPanel__head">
+              <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm" aria-label="Customer signups">
+                <div className="mb-3 flex flex-col gap-2.5 sm:flex-row sm:items-start sm:justify-between">
                   <div>
-                    <h2 className="adminPanel__title">Signups and profiles</h2>
-                    <p className="adminPanel__sub">
+                    <h2 className="text-base font-bold tracking-tight text-slate-950">Signups and profiles</h2>
+                    <p className="mt-1 max-w-2xl text-xs font-medium leading-5 text-slate-500">
                       {dashboardAnalytics.signups7} new in 7 days • {dashboardAnalytics.signups30} new in 30 days
                     </p>
                   </div>
-                  <div className="adminPanel__actions">
-                    <button className="adminButton" type="button" onClick={() => setAdminView('users')}>
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <button className="inline-flex min-h-9 items-center justify-center rounded-xl border border-slate-200 bg-white px-3 text-xs font-bold text-slate-900 shadow-sm transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50" type="button" onClick={() => setAdminView('users')}>
                       Manage users
                     </button>
                   </div>
                 </div>
-                <div className="adminInsightGrid">
-                  <div className="adminInsight">
-                    <div className="adminInsight__label">Total users</div>
-                    <div className="adminInsight__value">{metrics.totalUsers}</div>
+                <div className="grid gap-2.5 sm:grid-cols-3">
+                  <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                    <div className="text-[0.72rem] font-bold uppercase tracking-[0.14em] text-slate-400">Total users</div>
+                    <div className="mt-2 text-2xl font-bold tracking-tight text-slate-950">{metrics.totalUsers}</div>
                   </div>
-                  <div className="adminInsight">
-                    <div className="adminInsight__label">Profiles needing attention</div>
-                    <div className="adminInsight__value">{dashboardAnalytics.incompleteProfiles.length}</div>
+                  <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                    <div className="text-[0.72rem] font-bold uppercase tracking-[0.14em] text-slate-400">Profiles needing attention</div>
+                    <div className="mt-2 text-2xl font-bold tracking-tight text-slate-950">{dashboardAnalytics.incompleteProfiles.length}</div>
                   </div>
                 </div>
               </section>
             </section>
 
-            <section className="adminDashboardGrid adminDashboardGrid--stock" aria-label="Stock levels">
-              <section className="adminPanel" aria-label="Apparel stock levels">
-                <div className="adminPanel__head">
+            <section className="grid gap-3 xl:grid-cols-2" aria-label="Stock levels">
+              <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm" aria-label="Apparel stock levels">
+                <div className="mb-3 flex flex-col gap-2.5 sm:flex-row sm:items-start sm:justify-between">
                   <div>
-                    <h2 className="adminPanel__title">Apparel stock levels</h2>
-                    <p className="adminPanel__sub">Caps, shirts, apparel, and accessories only.</p>
+                    <h2 className="text-base font-bold tracking-tight text-slate-950">Apparel stock levels</h2>
+                    <p className="mt-1 max-w-2xl text-xs font-medium leading-5 text-slate-500">Caps, shirts, apparel, and accessories only.</p>
                   </div>
                 </div>
-                <div className="adminMetricList">
+                <div className="divide-y divide-slate-200 rounded-xl border border-slate-200 bg-white">
                   {dashboardAnalytics.categoryRows
                     .filter((row) => isApparelCategory(row.category))
                     .map((row) => (
-                      <div key={row.category} className="adminMetricList__row">
+                      <div key={row.category} className="grid grid-cols-[1fr_auto_auto_auto] items-center gap-2.5 px-3 py-2.5 text-xs [&_span]:font-bold [&_strong]:font-bold [&_small]:text-slate-500 [&_em]:not-italic [&_em]:text-red-600">
                         <span>{titleCase(row.category)}</span>
                         <strong>{row.units} units</strong>
                         <small>{row.active}/{row.count} active</small>
@@ -1268,33 +1451,33 @@ export function AdminDashboardPage() {
                       </div>
                     ))}
                 </div>
-                <div className="adminLowStock">
-                  <div className="adminLowStock__title">Low stock</div>
+                <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50 p-3">
+                  <div className="mb-2 text-[0.72rem] font-bold uppercase tracking-[0.14em] text-slate-400">Low stock</div>
                   {dashboardAnalytics.apparelLowStock.length > 0 ? (
                     dashboardAnalytics.apparelLowStock.map((product) => (
-                      <div key={product.id} className="adminLowStock__item">
+                      <div key={product.id} className="flex items-center justify-between gap-2.5 rounded-lg bg-white px-2.5 py-1.5 text-xs font-bold text-slate-700 [&_strong]:text-slate-950">
                         <span>{product.name}</span>
                         <strong>{product.stock_qty ?? 0}</strong>
                       </div>
                     ))
                   ) : (
-                    <p className="adminHint">No apparel items are low.</p>
+                    <p className="text-xs font-medium text-slate-500">No apparel items are low.</p>
                   )}
                 </div>
               </section>
 
-              <section className="adminPanel" aria-label="Cannabis stock levels">
-                <div className="adminPanel__head">
+              <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm" aria-label="Cannabis stock levels">
+                <div className="mb-3 flex flex-col gap-2.5 sm:flex-row sm:items-start sm:justify-between">
                   <div>
-                    <h2 className="adminPanel__title">Cannabis stock levels</h2>
-                    <p className="adminPanel__sub">Flower, edibles, beverages, smokables, vapes, concentrates.</p>
+                    <h2 className="text-base font-bold tracking-tight text-slate-950">Cannabis stock levels</h2>
+                    <p className="mt-1 max-w-2xl text-xs font-medium leading-5 text-slate-500">Flower, edibles, beverages, smokables, vapes, concentrates.</p>
                   </div>
                 </div>
-                <div className="adminMetricList">
+                <div className="divide-y divide-slate-200 rounded-xl border border-slate-200 bg-white">
                   {dashboardAnalytics.categoryRows
                     .filter((row) => isCannabisCategory(row.category))
                     .map((row) => (
-                      <div key={row.category} className="adminMetricList__row">
+                      <div key={row.category} className="grid grid-cols-[1fr_auto_auto_auto] items-center gap-2.5 px-3 py-2.5 text-xs [&_span]:font-bold [&_strong]:font-bold [&_small]:text-slate-500 [&_em]:not-italic [&_em]:text-red-600">
                         <span>{titleCase(row.category)}</span>
                         <strong>{row.units} units</strong>
                         <small>{row.active}/{row.count} active</small>
@@ -1302,36 +1485,36 @@ export function AdminDashboardPage() {
                       </div>
                     ))}
                 </div>
-                <div className="adminLowStock">
-                  <div className="adminLowStock__title">Low stock</div>
+                <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50 p-3">
+                  <div className="mb-2 text-[0.72rem] font-bold uppercase tracking-[0.14em] text-slate-400">Low stock</div>
                   {dashboardAnalytics.cannabisLowStock.length > 0 ? (
                     dashboardAnalytics.cannabisLowStock.map((product) => (
-                      <div key={product.id} className="adminLowStock__item">
+                      <div key={product.id} className="flex items-center justify-between gap-2.5 rounded-lg bg-white px-2.5 py-1.5 text-xs font-bold text-slate-700 [&_strong]:text-slate-950">
                         <span>{product.name}</span>
                         <strong>{product.stock_qty ?? 0}</strong>
                       </div>
                     ))
                   ) : (
-                    <p className="adminHint">No cannabis items are low.</p>
+                    <p className="text-xs font-medium text-slate-500">No cannabis items are low.</p>
                   )}
                 </div>
               </section>
             </section>
 
-            <section className="adminDashboardGrid" aria-label="Customers and sales">
-              <section className="adminPanel" aria-label="Recent signups">
-                <div className="adminPanel__head">
+            <section className="grid gap-3 xl:grid-cols-2" aria-label="Customers and sales">
+              <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm" aria-label="Recent signups">
+                <div className="mb-3 flex flex-col gap-2.5 sm:flex-row sm:items-start sm:justify-between">
                   <div>
-                    <h2 className="adminPanel__title">Recent signups</h2>
-                    <p className="adminPanel__sub">Latest account activity from profiles.</p>
+                    <h2 className="text-base font-bold tracking-tight text-slate-950">Recent signups</h2>
+                    <p className="mt-1 max-w-2xl text-xs font-medium leading-5 text-slate-500">Latest account activity from profiles.</p>
                   </div>
                 </div>
-                <div className="adminMiniList">
+                <div className="space-y-1.5">
                   {dashboardAnalytics.recentProfiles.length > 0 ? (
                     dashboardAnalytics.recentProfiles.map((profileRow) => (
                       <button
                         key={profileRow.id}
-                        className="adminMiniList__item"
+                        className="flex w-full items-center justify-between gap-2.5 rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-left text-xs font-bold text-slate-700 transition hover:bg-slate-50 [&_em]:not-italic [&_em]:text-slate-400"
                         type="button"
                         onClick={() => setSelectedProfile(profileRow)}
                       >
@@ -1345,21 +1528,21 @@ export function AdminDashboardPage() {
                       </button>
                     ))
                   ) : (
-                    <p className="adminHint">No signups yet.</p>
+                    <p className="text-xs font-medium text-slate-500">No signups yet.</p>
                   )}
                 </div>
               </section>
 
-              <section className="adminPanel" aria-label="Sales analytics">
-                <div className="adminPanel__head">
+              <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm" aria-label="Sales analytics">
+                <div className="mb-3 flex flex-col gap-2.5 sm:flex-row sm:items-start sm:justify-between">
                   <div>
-                    <h2 className="adminPanel__title">Sales analytics</h2>
-                    <p className="adminPanel__sub">Buyer spend and product purchase mix need order data.</p>
+                    <h2 className="text-base font-bold tracking-tight text-slate-950">Sales analytics</h2>
+                    <p className="mt-1 max-w-2xl text-xs font-medium leading-5 text-slate-500">Buyer spend and product purchase mix need order data.</p>
                   </div>
                 </div>
-                <div className="notice notice--warn notice--compact">
-                  <p className="notice__title">Orders are not connected yet</p>
-                  <p className="notice__body">
+                <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
+                  <p className="font-bold text-amber-950">Orders are not connected yet</p>
+                  <p className="mt-1 text-xs font-medium leading-5 text-amber-900">
                     The current database has products, brands, and profiles, but no orders or order_items table.
                     Once checkout/order capture exists, this panel can show who buys, how much they spend,
                     purchase timing, and product-type demand.
@@ -1415,30 +1598,30 @@ export function AdminDashboardPage() {
             </div>
 
             {view === 'stock' ? (
-              <div className="adminTabs" role="tablist" aria-label="Stock tabs">
+            <div className="mb-5 flex flex-wrap gap-2 rounded-2xl border border-slate-200 bg-slate-50 p-2" role="tablist" aria-label="Stock tabs">
                 <button
-                  className={tab === 'all' ? 'adminTab adminTab--active' : 'adminTab'}
+                  className={tab === 'all' ? 'rounded-xl bg-slate-950 px-4 py-2 text-sm font-black text-white shadow-sm' : 'rounded-xl px-4 py-2 text-sm font-black text-slate-600 transition hover:bg-white hover:text-slate-950'}
                   type="button"
                   onClick={() => setTab('all')}
                 >
                   All stock
                 </button>
                 <button
-                  className={tab === 'apparel' ? 'adminTab adminTab--active' : 'adminTab'}
+                  className={tab === 'apparel' ? 'rounded-xl bg-slate-950 px-4 py-2 text-sm font-black text-white shadow-sm' : 'rounded-xl px-4 py-2 text-sm font-black text-slate-600 transition hover:bg-white hover:text-slate-950'}
                   type="button"
                   onClick={() => setAdminView('apparel')}
                 >
                   Apparel management
                 </button>
                 <button
-                  className={tab === 'cannabis' ? 'adminTab adminTab--active' : 'adminTab'}
+                  className={tab === 'cannabis' ? 'rounded-xl bg-slate-950 px-4 py-2 text-sm font-black text-white shadow-sm' : 'rounded-xl px-4 py-2 text-sm font-black text-slate-600 transition hover:bg-white hover:text-slate-950'}
                   type="button"
                   onClick={() => setAdminView('cannabis')}
                 >
                   Cannabis management
                 </button>
                 <button
-                  className={tab === 'featured' ? 'adminTab adminTab--active' : 'adminTab'}
+                  className={tab === 'featured' ? 'rounded-xl bg-slate-950 px-4 py-2 text-sm font-black text-white shadow-sm' : 'rounded-xl px-4 py-2 text-sm font-black text-slate-600 transition hover:bg-white hover:text-slate-950'}
                   type="button"
                   onClick={() => setTab('featured')}
                 >
@@ -1448,22 +1631,22 @@ export function AdminDashboardPage() {
             ) : null}
 
             {view === 'apparel' || view === 'cannabis' ? (
-              <div className="adminCategoryGrid" aria-label={`${viewTitle(view)} categories`}>
+              <div className="mb-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4" aria-label={`${viewTitle(view)} categories`}>
                 {(view === 'apparel' ? APPAREL_CATEGORIES : CANNABIS_CATEGORIES).map((stockCategory) => (
                   <button
                     key={stockCategory}
                     className={
                       categoryFilter === stockCategory
-                        ? 'adminCategoryCard adminCategoryCard--active'
-                        : 'adminCategoryCard'
+                        ? 'rounded-2xl border border-slate-950 bg-slate-950 p-4 text-left text-white shadow-sm'
+                        : 'rounded-2xl border border-slate-200 bg-white p-4 text-left text-slate-700 shadow-sm transition hover:bg-slate-50'
                     }
                     type="button"
                     onClick={() =>
                       setCategoryFilter(categoryFilter === stockCategory ? 'all' : stockCategory)
                     }
                   >
-                    <span className="adminCategoryCard__label">{titleCase(stockCategory)}</span>
-                    <span className="adminCategoryCard__count">
+                    <span className="block text-sm font-black">{titleCase(stockCategory)}</span>
+                    <span className="mt-2 block text-2xl font-black">
                       {categoryCounts.get(stockCategory) ?? 0}
                     </span>
                   </button>
@@ -1472,11 +1655,11 @@ export function AdminDashboardPage() {
             ) : null}
 
             {filterOpen ? (
-              <div className="adminFilters">
-                <label className="adminFilters__field">
-                  <span className="adminFilters__label">Status</span>
+              <div className="mb-5 grid gap-3 rounded-2xl border border-slate-200 bg-slate-50 p-4 md:grid-cols-[1fr_1fr_1fr_auto] md:items-end">
+                <label className="block">
+                  <span className="mb-1 block text-xs font-black uppercase tracking-[0.14em] text-slate-400">Status</span>
                   <select
-                    className="adminFilters__input"
+                    className="h-11 w-full rounded-2xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-900 outline-none transition focus:border-emerald-400 focus:ring-4 focus:ring-emerald-500/10"
                     value={statusFilter}
                     onChange={(e) => setStatusFilter(e.target.value as typeof statusFilter)}
                   >
@@ -1485,10 +1668,10 @@ export function AdminDashboardPage() {
                     <option value="hidden">Hidden</option>
                   </select>
                 </label>
-                <label className="adminFilters__field">
-                  <span className="adminFilters__label">Brand</span>
+                <label className="block">
+                  <span className="mb-1 block text-xs font-black uppercase tracking-[0.14em] text-slate-400">Brand</span>
                   <select
-                    className="adminFilters__input"
+                    className="h-11 w-full rounded-2xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-900 outline-none transition focus:border-emerald-400 focus:ring-4 focus:ring-emerald-500/10"
                     value={brandFilter}
                     onChange={(e) => setBrandFilter(e.target.value)}
                   >
@@ -1500,10 +1683,10 @@ export function AdminDashboardPage() {
                     ))}
                   </select>
                 </label>
-                <label className="adminFilters__field">
-                  <span className="adminFilters__label">Category</span>
+                <label className="block">
+                  <span className="mb-1 block text-xs font-black uppercase tracking-[0.14em] text-slate-400">Category</span>
                   <select
-                    className="adminFilters__input"
+                    className="h-11 w-full rounded-2xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-900 outline-none transition focus:border-emerald-400 focus:ring-4 focus:ring-emerald-500/10"
                     value={categoryFilter}
                     onChange={(e) => setCategoryFilter(e.target.value as typeof categoryFilter)}
                   >
@@ -1516,7 +1699,7 @@ export function AdminDashboardPage() {
                   </select>
                 </label>
                 <button
-                  className="adminButton"
+                  className="inline-flex min-h-11 items-center justify-center rounded-2xl border border-slate-200 bg-white px-4 text-sm font-extrabold text-slate-900 shadow-sm transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
                   type="button"
                   onClick={clearStockFilters}
                 >
@@ -1525,11 +1708,11 @@ export function AdminDashboardPage() {
               </div>
             ) : null}
 
-            {productsLoading ? <p className="adminHint">Loading…</p> : null}
+            {productsLoading ? <p className="text-sm font-semibold text-slate-500">Loading…</p> : null}
             {!productsLoading && productsError ? (
-              <div className="notice notice--warn">
-                <p className="notice__title">Stock isn’t ready yet</p>
-                <p className="notice__body">{productsError}</p>
+              <div className="rounded-3xl border border-amber-200 bg-amber-50 p-5 text-amber-900 shadow-sm">
+                <p className="font-black text-amber-950">Stock isn’t ready yet</p>
+                <p className="mt-1 text-sm font-medium leading-6 text-amber-900">{productsError}</p>
               </div>
             ) : null}
 
@@ -1549,7 +1732,7 @@ export function AdminDashboardPage() {
                   const media = productMedia(p)
 
                   return (
-                  <div key={p.id} className="adminTable2__row" role="row">
+                    <div key={p.id} className="adminTable2__row" role="row">
                     <div role="cell" className="adminTable2__item adminTable2__item--withMedia">
                       <div className="adminTable2__thumb">
                         <AdminCatalogMedia src={media?.url} source={media?.source ?? null} alt={p.name} />
@@ -1585,37 +1768,7 @@ export function AdminDashboardPage() {
                       <button
                         className="chipButton"
                         type="button"
-                        onClick={async () => {
-                          const next = window.prompt(
-                            'Set stock quantity',
-                            String(p.stock_qty ?? 0),
-                          )
-                          if (next === null) return
-                          const nextQty = Math.trunc(Number(next))
-                          if (!Number.isFinite(nextQty) || nextQty < 0) {
-                            toast({
-                              variant: 'destructive',
-                              title: 'Invalid stock quantity',
-                              description: 'Enter a whole number of 0 or higher.',
-                            })
-                            return
-                          }
-                          try {
-                            const { error } = await supabase
-                              .from('products')
-                              .update({ stock_qty: nextQty })
-                              .eq('id', p.id)
-                            if (error) throw error
-                            await loadProducts()
-                          } catch (err) {
-                            const appErr = toAppError(err)
-                            toast({
-                              variant: 'destructive',
-                              title: appErr.title,
-                              description: appErr.message,
-                            })
-                          }
-                        }}
+                        onClick={() => openStockAdjust(p)}
                       >
                         Stock
                       </button>
@@ -1630,6 +1783,10 @@ export function AdminDashboardPage() {
                               .eq('id', p.id)
                             if (error) throw error
                             await loadProducts()
+                            toast({
+                              title: p.featured_on_landing ? 'Item unfeatured' : 'Item featured',
+                              description: `${p.name} was updated for the landing page.`,
+                            })
                           } catch (err) {
                             const appErr = toAppError(err)
                             toast({
@@ -1653,6 +1810,10 @@ export function AdminDashboardPage() {
                               .eq('id', p.id)
                             if (error) throw error
                             await loadProducts()
+                            toast({
+                              title: p.active ? 'Item hidden' : 'Item activated',
+                              description: `${p.name} is ${p.active ? 'hidden from' : 'visible in'} the store.`,
+                            })
                           } catch (err) {
                             const appErr = toAppError(err)
                             toast({
@@ -1668,39 +1829,47 @@ export function AdminDashboardPage() {
                       <button
                         className="chipButton chipButton--danger"
                         type="button"
-                        onClick={async () => {
-                          const ok = window.confirm(
-                            `Delete “${p.name}”? This cannot be undone.`,
-                          )
-                          if (!ok) return
-                          try {
-                            const { error } = await supabase
-                              .from('products')
-                              .delete()
-                              .eq('id', p.id)
-                            if (error) throw error
-                            await loadProducts()
-                          } catch (err) {
-                            const appErr = toAppError(err)
-                            toast({
-                              variant: 'destructive',
-                              title: appErr.title,
-                              description: appErr.message,
-                            })
-                          }
-                        }}
+                        onClick={() =>
+                          openConfirmDialog({
+                            title: 'Delete stock item?',
+                            description: `Delete "${p.name}"? This cannot be undone.`,
+                            confirmLabel: 'Delete item',
+                            destructive: true,
+                            onConfirm: async () => {
+                              try {
+                                const { error } = await supabase
+                                  .from('products')
+                                  .delete()
+                                  .eq('id', p.id)
+                                if (error) throw error
+                                await loadProducts()
+                                toast({
+                                  title: 'Item deleted',
+                                  description: `${p.name} was removed from stock.`,
+                                })
+                              } catch (err) {
+                                const appErr = toAppError(err)
+                                toast({
+                                  variant: 'destructive',
+                                  title: appErr.title,
+                                  description: appErr.message,
+                                })
+                              }
+                            },
+                          })
+                        }
                       >
                         Delete
                       </button>
                     </div>
-                  </div>
+                    </div>
                   )
                 })}
               </div>
             ) : null}
 
             {!productsLoading && !productsError && filteredProducts.length === 0 ? (
-              <p className="adminHint">No items yet. Add your first stock item.</p>
+              <p className="text-sm font-semibold text-slate-500">No items yet. Add your first stock item.</p>
             ) : null}
           </section>
         ) : null}
@@ -1713,69 +1882,8 @@ export function AdminDashboardPage() {
                 <p className="adminPanel__sub">Manage brand names and logos.</p>
               </div>
               <div className="adminPanel__actions">
-                <button className="adminButton" type="button" onClick={() => setAdminView('dashboard')}>
-                  Back
-                </button>
-              </div>
-            </div>
-
-            <div className="adminFormGrid">
-              <label className="field">
-                <span className="field__label">Brand name</span>
-                <input
-                  className="field__input"
-                  value={newBrandName}
-                  onChange={(e) => setNewBrandName(e.target.value)}
-                  placeholder="e.g. Lifted"
-                />
-              </label>
-              <label className="field">
-                <span className="field__label">Logo URL fallback</span>
-                <input
-                  className="field__input"
-                  value={newBrandLogoUrl}
-                  onChange={(e) => setNewBrandLogoUrl(e.target.value)}
-                  placeholder="https://… or /brands/…"
-                />
-                <span className="field__hint">Use this when the logo already lives elsewhere.</span>
-              </label>
-              <label className="field">
-                <span className="field__label">Upload logo</span>
-                <input
-                  className="field__input field__input--file"
-                  type="file"
-                  accept="image/*"
-                  onChange={(e) => setNewBrandLogoFile(e.target.files?.[0] ?? null)}
-                />
-                <span className="field__hint">Overrides the URL field and becomes the product fallback.</span>
-              </label>
-              <div className="adminFormGrid__full">
-                <div className="adminBrandComposer">
-                  <div className="adminBrandComposer__preview">
-                    <AdminLogoPreview
-                      src={effectiveNewBrandLogoPreview}
-                      fallback={newBrandName || 'Brand'}
-                    />
-                  </div>
-                  <div className="adminBrandComposer__copy">
-                    <div className="adminBrandComposer__title">
-                      {newBrandName.trim() || 'New brand preview'}
-                    </div>
-                    <div className="adminBrandComposer__body">
-                      Products without their own image can use this logo as the cannabis fallback.
-                      Apparel still uses cap and shirt placeholders when no product image is supplied.
-                    </div>
-                  </div>
-                </div>
-              </div>
-              <div className="adminFormGrid__full adminFormActions">
-                <button
-                  className="adminButton adminButton--primary"
-                  type="button"
-                  disabled={creatingBrand}
-                  onClick={() => void handleCreateBrand()}
-                >
-                  {creatingBrand ? 'Adding…' : 'Add brand'}
+                <button className="adminButton adminButton--primary" type="button" onClick={() => setAddBrandOpen(true)}>
+                  Add brand
                 </button>
               </div>
             </div>
@@ -1835,6 +1943,10 @@ export function AdminDashboardPage() {
                             if (error) throw error
                             await loadBrands()
                             await loadProducts()
+                            toast({
+                              title: b.active ? 'Brand hidden' : 'Brand activated',
+                              description: `${b.name} is ${b.active ? 'hidden from' : 'available for'} catalog use.`,
+                            })
                           } catch (err) {
                             const appErr = toAppError(err)
                             toast({
@@ -1850,25 +1962,33 @@ export function AdminDashboardPage() {
                       <button
                         className="chipButton chipButton--danger"
                         type="button"
-                        onClick={async () => {
-                          const ok = window.confirm(
-                            `Delete “${b.name}”? Products using this brand will keep working, but their brand will be cleared.`,
-                          )
-                          if (!ok) return
-                          try {
-                            const { error } = await supabase.from('brands').delete().eq('id', b.id)
-                            if (error) throw error
-                            await loadBrands()
-                            await loadProducts()
-                          } catch (err) {
-                            const appErr = toAppError(err)
-                            toast({
-                              variant: 'destructive',
-                              title: appErr.title,
-                              description: appErr.message,
-                            })
-                          }
-                        }}
+                        onClick={() =>
+                          openConfirmDialog({
+                            title: 'Delete brand?',
+                            description: `Delete "${b.name}"? Products using this brand will keep working, but their brand will be cleared.`,
+                            confirmLabel: 'Delete brand',
+                            destructive: true,
+                            onConfirm: async () => {
+                              try {
+                                const { error } = await supabase.from('brands').delete().eq('id', b.id)
+                                if (error) throw error
+                                await loadBrands()
+                                await loadProducts()
+                                toast({
+                                  title: 'Brand deleted',
+                                  description: `${b.name} was removed from the catalog.`,
+                                })
+                              } catch (err) {
+                                const appErr = toAppError(err)
+                                toast({
+                                  variant: 'destructive',
+                                  title: appErr.title,
+                                  description: appErr.message,
+                                })
+                              }
+                            },
+                          })
+                        }
                       >
                         Delete
                       </button>
@@ -1897,76 +2017,11 @@ export function AdminDashboardPage() {
                 </p>
               </div>
               <div className="adminPanel__actions">
+                <button className="adminButton adminButton--primary" type="button" onClick={() => setAddUserOpen(true)}>
+                  Add user
+                </button>
                 <button className="adminButton" type="button" onClick={() => void loadProfiles()}>
                   Refresh
-                </button>
-              </div>
-            </div>
-
-            <div className="adminFormGrid">
-              <label className="field">
-                <span className="field__label">First name</span>
-                <input
-                  className="field__input"
-                  value={newUserFirstName}
-                  onChange={(e) => setNewUserFirstName(e.target.value)}
-                  placeholder="Optional"
-                />
-              </label>
-
-              <label className="field">
-                <span className="field__label">Last name</span>
-                <input
-                  className="field__input"
-                  value={newUserLastName}
-                  onChange={(e) => setNewUserLastName(e.target.value)}
-                  placeholder="Optional"
-                />
-              </label>
-
-              <label className="field">
-                <span className="field__label">Role</span>
-                <select
-                  className="field__input"
-                  value={newUserRole}
-                  onChange={(e) => setNewUserRole(e.target.value as NewUserRole)}
-                >
-                  <option value="user">User</option>
-                  <option value="admin">Admin</option>
-                </select>
-              </label>
-
-              <label className="field">
-                <span className="field__label">Email</span>
-                <input
-                  className="field__input"
-                  type="email"
-                  value={newUserEmail}
-                  onChange={(e) => setNewUserEmail(e.target.value)}
-                  placeholder="user@example.com"
-                />
-              </label>
-
-              <label className="field">
-                <span className="field__label">Password</span>
-                <input
-                  className="field__input"
-                  type="text"
-                  value={newUserPassword}
-                  onChange={(e) => setNewUserPassword(e.target.value)}
-                  placeholder="Minimum 8 characters"
-                />
-                <span className="field__hint">The account is created active and can sign in immediately.</span>
-              </label>
-
-              <div className="adminFormGrid__full adminModal__actionsRow">
-                <button
-                  className="adminButton adminButton--primary"
-                  type="button"
-                  disabled={creatingUser}
-                  onClick={() => void handleCreateUser()}
-                >
-                  {creatingUser ? 'Creating…' : 'Create user'}
                 </button>
               </div>
             </div>
@@ -2055,31 +2110,34 @@ export function AdminDashboardPage() {
                         className="chipButton"
                         type="button"
                         disabled={p.id === user?.id}
-                        onClick={async () => {
-                          const ok = window.confirm(
-                            `${p.is_admin ? 'Remove admin' : 'Make admin'} for “${p.email ?? p.full_name ?? p.id}”?`,
-                          )
-                          if (!ok) return
-                          try {
-                            const { error } = await supabase
-                              .from('profiles')
-                              .update({ is_admin: !p.is_admin })
-                              .eq('id', p.id)
-                            if (error) throw error
-                            await loadProfiles()
-                            toast({
-                              title: p.is_admin ? 'Admin removed' : 'Admin granted',
-                              description: 'User permissions updated.',
-                            })
-                          } catch (err) {
-                            const appErr = toAppError(err)
-                            toast({
-                              variant: 'destructive',
-                              title: appErr.title,
-                              description: appErr.message,
-                            })
-                          }
-                        }}
+                        onClick={() =>
+                          openConfirmDialog({
+                            title: p.is_admin ? 'Remove admin access?' : 'Grant admin access?',
+                            description: `${p.is_admin ? 'Remove admin' : 'Make admin'} for "${p.email ?? p.full_name ?? p.id}"?`,
+                            confirmLabel: p.is_admin ? 'Remove admin' : 'Make admin',
+                            onConfirm: async () => {
+                              try {
+                                const { error } = await supabase
+                                  .from('profiles')
+                                  .update({ is_admin: !p.is_admin })
+                                  .eq('id', p.id)
+                                if (error) throw error
+                                await loadProfiles()
+                                toast({
+                                  title: p.is_admin ? 'Admin removed' : 'Admin granted',
+                                  description: 'User permissions updated.',
+                                })
+                              } catch (err) {
+                                const appErr = toAppError(err)
+                                toast({
+                                  variant: 'destructive',
+                                  title: appErr.title,
+                                  description: appErr.message,
+                                })
+                              }
+                            },
+                          })
+                        }
                       >
                         {p.is_admin ? 'Remove admin' : 'Make admin'}
                       </button>
@@ -2093,6 +2151,214 @@ export function AdminDashboardPage() {
               <p className="adminHint">No users match your search.</p>
             ) : null}
           </section>
+        ) : null}
+
+        {addBrandOpen ? (
+          <div className="adminModal" role="dialog" aria-modal="true" aria-label="Add brand">
+            <div
+              className="adminModal__backdrop"
+              onClick={() => {
+                if (!creatingBrand) setAddBrandOpen(false)
+              }}
+            />
+            <form
+              className="adminModal__card"
+              onSubmit={(event) => {
+                event.preventDefault()
+                void handleCreateBrand()
+              }}
+            >
+              <div className="adminModal__head">
+                <div>
+                  <div className="adminModal__title">Add brand</div>
+                  <div className="adminModal__sub">Create a brand logo fallback for catalog cards.</div>
+                </div>
+                <button
+                  className="adminButton"
+                  type="button"
+                  disabled={creatingBrand}
+                  onClick={() => setAddBrandOpen(false)}
+                >
+                  Close
+                </button>
+              </div>
+
+              <div className="adminFormGrid">
+                <label className="field">
+                  <span className="field__label">Brand name</span>
+                  <input
+                    className="field__input"
+                    value={newBrandName}
+                    onChange={(e) => setNewBrandName(e.target.value)}
+                    placeholder="e.g. Lifted"
+                    autoFocus
+                  />
+                </label>
+                <label className="field">
+                  <span className="field__label">Logo URL fallback</span>
+                  <input
+                    className="field__input"
+                    value={newBrandLogoUrl}
+                    onChange={(e) => setNewBrandLogoUrl(e.target.value)}
+                    placeholder="https://... or /brands/..."
+                  />
+                  <span className="field__hint">Use this when the logo already lives elsewhere.</span>
+                </label>
+                <label className="field">
+                  <span className="field__label">Upload logo</span>
+                  <input
+                    className="field__input field__input--file"
+                    type="file"
+                    accept="image/*"
+                    onChange={(e) => setNewBrandLogoFile(e.target.files?.[0] ?? null)}
+                  />
+                  <span className="field__hint">Overrides the URL field and becomes the product fallback.</span>
+                </label>
+                <div className="adminFormGrid__full">
+                  <div className="adminBrandComposer">
+                    <div className="adminBrandComposer__preview">
+                      <AdminLogoPreview
+                        src={effectiveNewBrandLogoPreview}
+                        fallback={newBrandName || 'Brand'}
+                      />
+                    </div>
+                    <div className="adminBrandComposer__copy">
+                      <div className="adminBrandComposer__title">
+                        {newBrandName.trim() || 'New brand preview'}
+                      </div>
+                      <div className="adminBrandComposer__body">
+                        Products without their own image can use this logo as the cannabis fallback.
+                        Apparel still uses cap and shirt placeholders when no product image is supplied.
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                <div className="adminFormGrid__full adminModal__actionsRow">
+                  <button
+                    className="adminButton"
+                    type="button"
+                    disabled={creatingBrand}
+                    onClick={() => setAddBrandOpen(false)}
+                  >
+                    Cancel
+                  </button>
+                  <button className="adminButton adminButton--primary" type="submit" disabled={creatingBrand}>
+                    {creatingBrand ? 'Adding...' : 'Add brand'}
+                  </button>
+                </div>
+              </div>
+            </form>
+          </div>
+        ) : null}
+
+        {addUserOpen ? (
+          <div className="adminModal" role="dialog" aria-modal="true" aria-label="Add user">
+            <div
+              className="adminModal__backdrop"
+              onClick={() => {
+                if (!creatingUser) setAddUserOpen(false)
+              }}
+            />
+            <form
+              className="adminModal__card"
+              onSubmit={(event) => {
+                event.preventDefault()
+                void handleCreateUser()
+              }}
+            >
+              <div className="adminModal__head">
+                <div>
+                  <div className="adminModal__title">Add user</div>
+                  <div className="adminModal__sub">Create an active account and assign the correct role.</div>
+                </div>
+                <button
+                  className="adminButton"
+                  type="button"
+                  disabled={creatingUser}
+                  onClick={() => setAddUserOpen(false)}
+                >
+                  Close
+                </button>
+              </div>
+
+              <div className="adminFormGrid">
+                <label className="field">
+                  <span className="field__label">First name</span>
+                  <input
+                    className="field__input"
+                    value={newUserFirstName}
+                    onChange={(e) => setNewUserFirstName(e.target.value)}
+                    placeholder="Optional"
+                    autoFocus
+                  />
+                </label>
+                <label className="field">
+                  <span className="field__label">Last name</span>
+                  <input
+                    className="field__input"
+                    value={newUserLastName}
+                    onChange={(e) => setNewUserLastName(e.target.value)}
+                    placeholder="Optional"
+                  />
+                </label>
+                <label className="field">
+                  <span className="field__label">Role</span>
+                  <select
+                    className="field__input"
+                    value={newUserRole}
+                    onChange={(e) => setNewUserRole(e.target.value as NewUserRole)}
+                  >
+                    <option value="user">User</option>
+                    <option value="admin">Admin</option>
+                  </select>
+                </label>
+                <label className="field">
+                  <span className="field__label">Id Number</span>
+                  <input
+                    className="field__input"
+                    type="Id Number"
+                    value={newUserIdNumber}
+                    onChange={(e) => setNewUserIdNumber(e.target.value)}
+                    placeholder="1234567890987"
+                  />
+                </label>
+                <label className="field">
+                  <span className="field__label">Email</span>
+                  <input
+                    className="field__input"
+                    type="email"
+                    value={newUserEmail}
+                    onChange={(e) => setNewUserEmail(e.target.value)}
+                    placeholder="user@example.com"
+                  />
+                </label>
+                <label className="field">
+                  <span className="field__label">Password</span>
+                  <input
+                    className="field__input"
+                    type="text"
+                    value={newUserPassword}
+                    onChange={(e) => setNewUserPassword(e.target.value)}
+                    placeholder="Minimum 8 characters"
+                  />
+                  <span className="field__hint">The account is created active and can sign in immediately.</span>
+                </label>
+                <div className="adminFormGrid__full adminModal__actionsRow">
+                  <button
+                    className="adminButton"
+                    type="button"
+                    disabled={creatingUser}
+                    onClick={() => setAddUserOpen(false)}
+                  >
+                    Cancel
+                  </button>
+                  <button className="adminButton adminButton--primary" type="submit" disabled={creatingUser}>
+                    {creatingUser ? 'Creating...' : 'Create user'}
+                  </button>
+                </div>
+              </div>
+            </form>
+          </div>
         ) : null}
 
         {addStockOpen ? (
@@ -2446,6 +2712,120 @@ export function AdminDashboardPage() {
                     {savingBrand ? 'Saving…' : 'Save brand'}
                   </button>
                 </div>
+              </div>
+            </div>
+          </div>
+        ) : null}
+
+        {stockAdjusting ? (
+          <div className="adminModal" role="dialog" aria-modal="true" aria-label="Set stock quantity">
+            <div
+              className="adminModal__backdrop"
+              onClick={() => {
+                if (!savingStockAdjust) setStockAdjusting(null)
+              }}
+            />
+            <form
+              className="adminModal__card adminModal__card--compact"
+              onSubmit={(event) => {
+                event.preventDefault()
+                void handleSaveStockAdjust()
+              }}
+            >
+              <div className="adminModal__head">
+                <div>
+                  <div className="adminModal__title">Set stock quantity</div>
+                  <div className="adminModal__sub">{stockAdjusting.name}</div>
+                </div>
+                <button
+                  className="adminButton"
+                  type="button"
+                  disabled={savingStockAdjust}
+                  onClick={() => setStockAdjusting(null)}
+                >
+                  Close
+                </button>
+              </div>
+              <div className="adminConfirmBody">
+                <label className="field">
+                  <span className="field__label">Quantity in stock</span>
+                  <input
+                    className="field__input"
+                    type="number"
+                    min="0"
+                    step="1"
+                    inputMode="numeric"
+                    value={stockAdjustQty}
+                    onChange={(event) => setStockAdjustQty(event.target.value)}
+                    autoFocus
+                  />
+                  <span className="field__hint">Use a whole number of 0 or higher.</span>
+                </label>
+              </div>
+              <div className="adminModal__actionsRow adminConfirmActions">
+                <button
+                  className="adminButton"
+                  type="button"
+                  disabled={savingStockAdjust}
+                  onClick={() => setStockAdjusting(null)}
+                >
+                  Cancel
+                </button>
+                <button className="adminButton adminButton--primary" type="submit" disabled={savingStockAdjust}>
+                  {savingStockAdjust ? 'Saving...' : 'Save stock'}
+                </button>
+              </div>
+            </form>
+          </div>
+        ) : null}
+
+        {confirmDialog ? (
+          <div className="adminModal" role="alertdialog" aria-modal="true" aria-label={confirmDialog.title}>
+            <div
+              className="adminModal__backdrop"
+              onClick={() => {
+                if (!confirmingDialog) setConfirmDialog(null)
+              }}
+            />
+            <div className="adminModal__card adminModal__card--compact">
+              <div className="adminModal__head">
+                <div>
+                  <div className="adminModal__title">{confirmDialog.title}</div>
+                  <div className="adminModal__sub">Please confirm this action.</div>
+                </div>
+                <button
+                  className="adminButton"
+                  type="button"
+                  disabled={confirmingDialog}
+                  onClick={() => setConfirmDialog(null)}
+                >
+                  Close
+                </button>
+              </div>
+              <div className="adminConfirmBody">
+                <p>{confirmDialog.description}</p>
+              </div>
+              <div className="adminModal__actionsRow adminConfirmActions">
+                <button
+                  className="adminButton"
+                  type="button"
+                  disabled={confirmingDialog}
+                  onClick={() => setConfirmDialog(null)}
+                >
+                  Cancel
+                </button>
+                <button
+                  className={
+                    confirmDialog.destructive
+                      ? 'adminButton adminButton--danger'
+                      : 'adminButton adminButton--primary'
+                  }
+                  type="button"
+                  disabled={confirmingDialog}
+                  onClick={() => void handleConfirmDialog()}
+                >
+                  {confirmingDialog ? 'Working...' : confirmDialog.confirmLabel}
+                </button>
               </div>
             </div>
           </div>
