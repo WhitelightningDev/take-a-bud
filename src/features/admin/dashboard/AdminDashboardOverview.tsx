@@ -1,14 +1,17 @@
+import { useState } from 'react'
 import { Sparkline } from '../components'
 import type { Product, ProfileRow, Brand } from '../types'
 import { isApparelCategory, isCannabisCategory, titleCase } from '../utils'
+import { UserProfileDialog } from '../users/UserProfileDialog'
+import { UsersTable } from '../users/UsersTable'
 import { useDashboardAnalytics } from './useDashboardAnalytics'
 
 type AdminDashboardOverviewProps = {
   products: Product[]
   brands: Brand[]
   profiles: ProfileRow[]
-  onViewChange: (view: 'stock' | 'apparel' | 'cannabis' | 'users') => void
-  onProfileSelect: (profile: ProfileRow) => void
+  onViewChange: (view: 'stock' | 'apparel' | 'cannabis' | 'brands' | 'users') => void
+  onProfileSelect?: (profile: ProfileRow) => void
 }
 
 function ActionButton({ children, onClick }: { children: React.ReactNode; onClick: () => void }) {
@@ -31,6 +34,12 @@ export function AdminDashboardOverview({
   onProfileSelect,
 }: AdminDashboardOverviewProps) {
   const analytics = useDashboardAnalytics({ products, profiles })
+  const [selectedProfile, setSelectedProfile] = useState<ProfileRow | null>(null)
+
+  const handleViewProfile = (profile: ProfileRow) => {
+    onProfileSelect?.(profile)
+    setSelectedProfile(profile)
+  }
 
   const metrics = {
     total: products.length,
@@ -206,29 +215,8 @@ export function AdminDashboardOverview({
             <p className="mt-1 text-sm font-medium leading-6 text-slate-500">Latest account activity from profiles.</p>
           </div>
 
-          <div className="mt-5 space-y-2">
-            {analytics.recentProfiles.length > 0 ? (
-              analytics.recentProfiles.map((profile) => (
-                <button
-                  key={profile.id}
-                  className="flex w-full min-w-0 items-center justify-between gap-4 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-left shadow-sm transition hover:border-slate-300 hover:bg-slate-50"
-                  type="button"
-                  onClick={() => onProfileSelect(profile)}
-                >
-                  <span className="min-w-0 truncate text-sm font-extrabold text-slate-800">
-                    {(profile.full_name ??
-                      `${profile.first_name ?? ''} ${profile.last_name ?? ''}`.trim()) ||
-                      profile.email ||
-                      'User'}
-                  </span>
-                  <em className="shrink-0 text-xs not-italic font-bold text-slate-400">
-                    {profile.created_at ? new Date(profile.created_at).toLocaleDateString() : '—'}
-                  </em>
-                </button>
-              ))
-            ) : (
-              <p className="text-sm font-medium text-slate-500">No signups yet.</p>
-            )}
+          <div className="mt-5 overflow-hidden rounded-2xl border border-slate-200">
+            <UsersTable users={analytics.recentProfiles} onViewProfile={handleViewProfile} />
           </div>
         </section>
 
@@ -250,6 +238,10 @@ export function AdminDashboardOverview({
           </div>
         </section>
       </section>
+
+      {selectedProfile ? (
+        <UserProfileDialog user={selectedProfile} onClose={() => setSelectedProfile(null)} />
+      ) : null}
     </div>
   )
 }

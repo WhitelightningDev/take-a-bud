@@ -2,6 +2,8 @@ import { useMemo } from 'react'
 import type { Product, ProfileRow } from '../types'
 import { APPAREL_CATEGORIES, CANNABIS_CATEGORIES, isApparelCategory, isCannabisCategory } from '../utils'
 
+const APP_BOOT_TIME_MS = Date.now()
+
 export function useDashboardAnalytics({
   products,
   profiles,
@@ -10,7 +12,7 @@ export function useDashboardAnalytics({
   profiles: ProfileRow[]
 }) {
   return useMemo(() => {
-    const now = Date.now()
+    const now = APP_BOOT_TIME_MS
     const sevenDaysMs = 7 * 24 * 60 * 60 * 1000
     const thirtyDaysMs = 30 * 24 * 60 * 60 * 1000
 

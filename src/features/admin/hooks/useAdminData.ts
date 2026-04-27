@@ -110,7 +110,13 @@ export function useAdminData() {
 
   useEffect(() => {
     if (!isSupabaseConfigured()) return
-    void reloadAdminData()
+    const timeoutId = window.setTimeout(() => {
+      void reloadAdminData()
+    }, 0)
+
+    return () => {
+      window.clearTimeout(timeoutId)
+    }
   }, [reloadAdminData])
 
   return {

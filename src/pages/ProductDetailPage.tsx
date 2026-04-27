@@ -106,7 +106,7 @@ function InfoTile({ label, value }: { label: string; value: string }) {
 }
 
 function ProductDetailMedia({ media, name }: { media: ReturnType<typeof resolveProductMedia> | null; name: string }) {
-  if (!media?.src) {
+  if (!media?.url) {
     return (
       <div className="flex aspect-[4/3] items-center justify-center bg-slate-100">
         <div className="text-sm font-extrabold uppercase tracking-[0.14em] text-slate-400">No image</div>
@@ -122,7 +122,7 @@ function ProductDetailMedia({ media, name }: { media: ReturnType<typeof resolveP
             ? 'h-full w-full rounded-2xl object-cover shadow-sm'
             : 'max-h-full max-w-full rounded-2xl object-contain p-6'
         }
-        src={media.src}
+        src={media.url}
         alt={name}
         loading="eager"
       />
@@ -220,7 +220,7 @@ export function ProductDetailPage() {
             productId: product.id,
             name: product.name,
             priceCents: product.price_cents,
-            imageUrl: media?.src ?? product.image_url,
+            imageUrl: media?.url ?? product.image_url,
             quantity: nextQuantity,
           },
         ]

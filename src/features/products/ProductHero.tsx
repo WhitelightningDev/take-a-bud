@@ -43,7 +43,7 @@ function ProductHeroMedia({
   media: ReturnType<typeof resolveProductMedia>
   name: string
 }) {
-  if (!media.url) {
+  if (!media?.url) {
     return (
       <div className="flex aspect-[4/3] items-center justify-center bg-slate-100">
         <div className="text-sm font-extrabold uppercase tracking-[0.14em] text-slate-400">

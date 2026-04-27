@@ -110,7 +110,7 @@ function AccountHero({
 
           <div className="flex flex-wrap gap-2 sm:justify-end">
             <AccountBadge tone={verified ? 'success' : 'warn'}>{verified ? '18+ verified' : 'Needs verification'}</AccountBadge>
-            <AccountBadge tone={score === 100 ? 'success' : 'neutral'}>{score}% complete</AccountBadge>
+            <AccountBadge tone={score === 100 ? 'success' : 'neutral'}>{`${score}% complete`}</AccountBadge>
           </div>
         </div>
       </div>
