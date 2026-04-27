@@ -484,6 +484,14 @@
   font-size: 15px;
 }
 
+.productCard--compact .productCard__desc {
+  min-height: 56px;
+}
+
+.productCard--compact .productCard__price {
+  margin-top: 10px;
+}
+
 .brands {
   display: grid;
   gap: 14px;
@@ -1482,6 +1490,8 @@
   background: #fff;
   box-shadow: 0 14px 30px rgba(0, 0, 0, 0.05);
   display: grid;
+  color: inherit;
+  text-decoration: none;
 }
 
 .productCard--store {

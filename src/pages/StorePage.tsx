@@ -1,5 +1,5 @@
 import { useDeferredValue, useEffect, useMemo, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import { Blend, MoonStar, Search, SlidersHorizontal, SunMedium, X } from 'lucide-react'
 import { useAuth } from '../auth/useAuth.ts'
 import { AppHeader } from '../components/AppHeader.tsx'
@@ -136,11 +136,13 @@ function productTags(product: Product) {
 
 export function StorePage() {
   const { user } = useAuth()
+  const [searchParams, setSearchParams] = useSearchParams()
+  const initialCategory = searchParams.get('category') ?? 'all'
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [products, setProducts] = useState<Product[]>([])
   const [query, setQuery] = useState('')
-  const [categoryFilter, setCategoryFilter] = useState('all')
+  const [categoryFilter, setCategoryFilter] = useState(initialCategory)
   const [brandFilter, setBrandFilter] = useState('all')
   const [strainFilter, setStrainFilter] = useState('all')
   const [methodFilter, setMethodFilter] = useState('all')
@@ -340,6 +342,12 @@ export function StorePage() {
     setMethodFilter('all')
     setStockFilter('all')
     setSortBy('newest')
+    setSearchParams({})
+  }
+
+  function updateCategoryFilter(value: string) {
+    setCategoryFilter(value)
+    setSearchParams(value === 'all' ? {} : { category: value })
   }
 
   return (
@@ -359,7 +367,7 @@ export function StorePage() {
                   key={option.value}
                   className={categoryFilter === option.value ? 'storeHero__chip storeHero__chip--active' : 'storeHero__chip'}
                   type="button"
-                  onClick={() => setCategoryFilter(option.value)}
+                  onClick={() => updateCategoryFilter(option.value)}
                 >
                   {option.label}
                 </button>
@@ -453,7 +461,7 @@ export function StorePage() {
                 <button
                   className={categoryFilter === 'all' ? 'storeFilterChip storeFilterChip--active' : 'storeFilterChip'}
                   type="button"
-                  onClick={() => setCategoryFilter('all')}
+                  onClick={() => updateCategoryFilter('all')}
                 >
                   All categories
                 </button>
@@ -464,7 +472,7 @@ export function StorePage() {
                       categoryFilter === option.value ? 'storeFilterChip storeFilterChip--active' : 'storeFilterChip'
                     }
                     type="button"
-                    onClick={() => setCategoryFilter(option.value)}
+                    onClick={() => updateCategoryFilter(option.value)}
                   >
                     {option.label}
                     <span className="storeFilterChip__count">{option.count}</span>

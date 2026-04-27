@@ -13,41 +13,41 @@ const UNDER_18_REDIRECT_URL = 'https://www.disney.co.za/'
 
 const categoryTiles = [
   {
-    title: 'Edibles',
-    body: 'Gummies and infused treats grouped clearly for easier browsing.',
-    href: '/store',
+    title: 'Lifted Delta 8 Gummies',
+    body: 'Clowd 8 hybrid gummies in a 600mg pack for customers who prefer edible products.',
+    href: '/store?category=edible',
   },
   {
-    title: 'Smokables',
-    body: 'Flower and smoking-friendly products separated from apparel.',
-    href: '/store',
+    title: 'Take A Bud Caps',
+    body: 'Branded caps with live stock counts, current pricing, and product images as they are added.',
+    href: '/store?category=caps',
   },
   {
-    title: 'Beverages',
-    body: 'Drinks and ready-to-enjoy items managed as their own category.',
-    href: '/store',
+    title: 'Take A Bud Shirts',
+    body: 'Store merch for customers who want the brand without buying cannabis products.',
+    href: '/store?category=shirts',
   },
 ]
 
 const trustPoints = [
-  'Curated catalog',
-  'Local storefront',
-  'Apparel and cannabis managed separately',
-  'Sign in to view live stock',
+  '18+ account verification',
+  'Live inventory counts',
+  'Prices shown in ZAR',
+  'Cannabis and apparel separated',
 ]
 
 const educationCards = [
   {
-    title: 'Shop by format',
-    body: 'Browse edibles, beverages, smokables, concentrates, and apparel without mixing product types.',
+    title: 'Create an account',
+    body: 'Sign up once with your details so age-restricted products stay behind verified access.',
   },
   {
-    title: 'Clear stock status',
-    body: 'Product cards show availability and category labels so customers can move faster.',
+    title: 'Shop live stock',
+    body: 'Browse caps, shirts, edibles, flower, vapes, and concentrates with current availability.',
   },
   {
-    title: 'Brand-led catalog',
-    body: 'Brand logos and placeholders keep the storefront looking complete even before product photos arrive.',
+    title: 'Review before buying',
+    body: 'Open each item for price, brand, category, strain type, product format, and stock status.',
   },
 ]
 
@@ -93,9 +93,11 @@ type BrandRow = {
 type FeaturedProduct = {
   id: string
   name: string
+  description: string | null
   price_cents: number
   image_url: string | null
   category: string
+  stock_qty?: number | null
   consumption_method?: 'smokable' | 'edible' | 'dab' | null
   strain_type?: 'sativa' | 'indica' | 'hybrid' | null
   brand:
@@ -117,6 +119,34 @@ function strainMeta(strain: FeaturedProduct['strain_type']) {
   if (strain === 'indica') return { label: 'Indica', icon: MoonStar }
   if (strain === 'hybrid') return { label: 'Hybrid', icon: Blend }
   return null
+}
+
+function productDescription(product: FeaturedProduct) {
+  if (product.description?.trim()) return product.description.trim()
+
+  const category = product.category.toLowerCase()
+  const name = product.name.toLowerCase()
+
+  if (name.includes('clowd 8') || name.includes('delta 8') || category === 'edible') {
+    return 'Lifted hybrid edible gummies with a 600mg pack strength and current in-store availability.'
+  }
+
+  if (category === 'caps') {
+    return 'Take A Bud branded cap with live stock counts and current store pricing.'
+  }
+
+  if (category === 'shirts') {
+    return 'Take A Bud branded shirt for customers shopping apparel and merch.'
+  }
+
+  return `${titleCase(product.category)} item with live stock and current Take A Bud pricing.`
+}
+
+function productStockLabel(product: FeaturedProduct) {
+  if (typeof product.stock_qty !== 'number') return 'Check stock'
+  if (product.stock_qty <= 0) return 'Out of stock'
+  if (product.stock_qty === 1) return '1 left'
+  return `${product.stock_qty} in stock`
 }
 
 export function LandingPage() {
@@ -161,7 +191,7 @@ export function LandingPage() {
         const { data, error } = await supabase
           .from('products')
           .select(
-            'id, name, price_cents, image_url, category, consumption_method, strain_type, brand:brands(id, name, logo_url)',
+            'id, name, description, price_cents, image_url, category, stock_qty, consumption_method, strain_type, brand:brands(id, name, logo_url)',
           )
           .eq('active', true)
           .eq('featured_on_landing', true)
@@ -272,7 +302,7 @@ export function LandingPage() {
       ) : null}
 
       <header className="landing__header">
-        <div className="landing__notice">Adults only. Sign in to browse live availability.</div>
+        <div className="landing__notice">Adults only. Verified customers can shop live Take A Bud stock.</div>
         <nav className="landing__nav" aria-label="Primary">
           <Link className="landing__logoLink" to="/" aria-label="Take A Bud">
             <img className="landing__logo" src={logoImg} alt="Take A Bud" />
@@ -289,7 +319,7 @@ export function LandingPage() {
               Login
             </Link>
             <Link className="landing__authButton" to={user ? '/store' : '/signup'}>
-              {user ? 'Open store' : 'Sign up'}
+              {user ? 'Open store' : 'Create account'}
             </Link>
           </div>
         </nav>
@@ -299,14 +329,14 @@ export function LandingPage() {
         <section className="landingHero" aria-label="Intro">
           <div className="landingHero__copy">
             <p className="landingHero__eyebrow">Take A Bud Store</p>
-            <h1 className="landingHero__title">A cleaner way to browse the shelf.</h1>
+            <h1 className="landingHero__title">Shop Take A Bud stock online.</h1>
             <p className="landingHero__body">
-              Apparel, edibles, beverages, smokables, and concentrates are organised into a
-              straightforward catalog with brand fallbacks and clear stock status.
+              Browse Take A Bud Apparel caps and shirts, plus Lifted Delta 8 gummies and other
+              18+ products as they are added to the live catalog.
             </p>
             <div className="landing__cta" aria-label="Call to action">
-              <Link className="landing__button landing__button--primary" to="/store">
-                View product range
+              <Link className="landing__button landing__button--primary" to={user ? '/store' : '/signup'}>
+                {user ? 'Shop now' : 'Create account to shop'}
               </Link>
               {!user ? (
                 <Link className="landing__button landing__button--dark" to="/login">
@@ -323,12 +353,12 @@ export function LandingPage() {
           <div className="landingHero__visual" aria-hidden="true">
             <img className="landingHero__leaf" src={cannabisLeafImg} alt="" />
             <div className="landingHero__card landingHero__card--front">
-              <span>Edibles</span>
-              <strong>Gummies</strong>
+              <span>Lifted</span>
+              <strong>Delta 8 Gummies</strong>
             </div>
             <div className="landingHero__card landingHero__card--back">
-              <span>Apparel</span>
-              <strong>Caps & shirts</strong>
+              <span>Take A Bud Apparel</span>
+              <strong>Caps and Shirts</strong>
             </div>
           </div>
         </section>
@@ -344,7 +374,7 @@ export function LandingPage() {
         <section id="range" className="landingSection" aria-label="Product range">
           <div className="landingSection__head">
             <p className="landingSection__eyebrow">Browse by range</p>
-            <h2 className="landingSection__title">Shop the way the catalog is managed.</h2>
+            <h2 className="landingSection__title">Start with the ranges customers are buying now.</h2>
           </div>
           <div className="landingCategoryGrid">
             {categoryTiles.map((tile) => (
@@ -360,8 +390,8 @@ export function LandingPage() {
         <section id="featured" className="landingSection landingSection--tinted" aria-label="Featured products">
           <div className="landingSection__head landingSection__head--split">
             <div>
-              <p className="landingSection__eyebrow">Just added</p>
-              <h2 className="landingSection__title">Featured products</h2>
+              <p className="landingSection__eyebrow">Featured stock</p>
+              <h2 className="landingSection__title">Current Take A Bud picks</h2>
             </div>
             <Link className="landingSection__link" to="/store">
               View more
@@ -374,7 +404,7 @@ export function LandingPage() {
                 const media = featuredImage(p)
 
                 return (
-                  <article key={p.id} className="productCard productCard--compact">
+                  <Link key={p.id} className="productCard productCard--compact" to={`/products/${p.id}`}>
                     {media ? (
                       <img
                         className={
@@ -395,6 +425,7 @@ export function LandingPage() {
                     )}
                     <div className="productCard__body">
                       <div className="productCard__meta">
+                        <span className="tag tag--brand">{productStockLabel(p)}</span>
                         {featuredTags(p).map((tag) => {
                           const Icon = tag.icon
                           return (
@@ -406,14 +437,15 @@ export function LandingPage() {
                         })}
                       </div>
                       <h3 className="productCard__title">{p.name}</h3>
+                      <p className="productCard__desc">{productDescription(p)}</p>
                       <p className="productCard__price">{formatZar(p.price_cents)}</p>
                     </div>
-                  </article>
+                  </Link>
                 )
               })}
             </div>
           ) : (
-            <p className="appHint">No featured products yet. Admins can mark items as featured.</p>
+            <p className="appHint">Featured products are being updated. Open the store to browse the full catalog.</p>
           )}
         </section>
 
