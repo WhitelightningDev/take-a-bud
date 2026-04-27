@@ -75,7 +75,7 @@ export function ProductHero({ product }: { product: ProductDetail }) {
   const media = resolveProductMedia({
     imageUrl: product.image_url,
     category: product.category,
-    brandLogoUrl: brand?.logo_url ?? null,
+    brandLogoUrl: brand?.logo_url ?? undefined,
   })
   const inStock = isProductInStock(product)
 
@@ -88,7 +88,7 @@ export function ProductHero({ product }: { product: ProductDetail }) {
       <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
         <div className="flex flex-wrap gap-2">
           <ProductBadge>{productCategoryLabel(product)}</ProductBadge>
-          {product.featured_on_landing ? <ProductBadge tone="success">Featured</ProductBadge> : null}
+          {product.featured_on_landing ? <ProductBadge tone="success">Featured</ProductBadge> : undefined}
           <ProductBadge tone={inStock ? 'success' : 'warn'}>{inStock ? 'In stock' : 'Out of stock'}</ProductBadge>
         </div>
 
@@ -97,7 +97,7 @@ export function ProductHero({ product }: { product: ProductDetail }) {
             <div className="text-sm font-extrabold uppercase tracking-[0.14em] text-emerald-700">
               {brand.name}
             </div>
-          ) : null}
+          ) : undefined}
           <h1 className="mt-2 text-3xl font-black tracking-tight text-slate-950 sm:text-4xl">
             {product.name}
           </h1>
