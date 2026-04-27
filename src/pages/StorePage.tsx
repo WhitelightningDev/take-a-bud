@@ -612,7 +612,12 @@ export function StorePage() {
                   const brand = productBrand(product)
 
                   return (
-                    <article key={product.id} className="productCard productCard--store">
+                    <Link
+                      key={product.id}
+                      to={`/products/${product.id}`}
+                      className="block transition hover:-translate-y-1"
+                    >
+                      <article className="productCard productCard--store h-full">
                       <div className="productCard__media">
                         {image ? (
                           <img
@@ -680,10 +685,11 @@ export function StorePage() {
 
                         <div className="productCard__footer">
                           <p className="productCard__price">{formatPrice(product.price_cents)}</p>
-                          <span className="productCard__cta">Catalog item</span>
+                          <span className="productCard__cta">View product</span>
                         </div>
                       </div>
-                    </article>
+                      </article>
+                    </Link>
                   )
                 })}
               </div>

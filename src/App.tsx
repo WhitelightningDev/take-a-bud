@@ -8,6 +8,7 @@ import { NotFoundPage } from './pages/NotFoundPage.tsx'
 import { ProfilePage } from './pages/ProfilePage.tsx'
 import { SignupPage } from './pages/SignupPage.tsx'
 import { StorePage } from './pages/StorePage.tsx'
+import { ProductDetailPage } from './pages/ProductDetailPage.tsx'
 
 function App() {
   return (
@@ -21,6 +22,14 @@ function App() {
           element={
             <RequireAuth>
               <StorePage />
+            </RequireAuth>
+          }
+        />
+        <Route
+          path="/products/:productId"
+          element={
+            <RequireAuth>
+              <ProductDetailPage />
             </RequireAuth>
           }
         />
